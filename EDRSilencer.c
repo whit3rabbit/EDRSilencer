@@ -486,8 +486,8 @@ BOOL initializeWfp(HANDLE* hEngine) {
 
     FWPM_PROVIDER0 provider = { 0 };
     provider.providerKey = ProviderGUID;
-    provider.displayData.name = L"EDR Silencer Provider";
-    provider.displayData.description = L"Provider for EDR Silencer to block network traffic";
+    provider.displayData.name = EDR_PROVIDER_NAME;
+    provider.displayData.description = EDR_PROVIDER_DESCRIPTION;
     result = FwpmProviderAdd0(*hEngine, &provider, NULL);
     if (result != ERROR_SUCCESS && (long)result != FWP_E_ALREADY_EXISTS) {
         printf("[-] FwpmProviderAdd0 failed. Error: 0x%lX\n", result);
@@ -497,8 +497,8 @@ BOOL initializeWfp(HANDLE* hEngine) {
 
     FWPM_SUBLAYER0 subLayer = { 0 };
     subLayer.subLayerKey = SubLayerGUID;
-    subLayer.displayData.name = L"EDR Silencer SubLayer";
-    subLayer.displayData.description = L"SubLayer for EDR Silencer filters";
+    subLayer.displayData.name = EDR_SUBLAYER_NAME;
+    subLayer.displayData.description = EDR_SUBLAYER_DESCRIPTION;
     subLayer.providerKey = (GUID*)&ProviderGUID;
     subLayer.weight = 0x01;
     result = FwpmSubLayerAdd0(*hEngine, &subLayer, NULL);

@@ -7,6 +7,12 @@
 #include <strings.h> // For strcasecmp on MinGW
 #include <psapi.h>
 
+// Define provider and sublayer information
+#define EDR_PROVIDER_NAME L"EDR Silencer Provider"
+#define EDR_PROVIDER_DESCRIPTION L"Provider for EDR Silencer to block network traffic"
+#define EDR_SUBLAYER_NAME L"EDR Silencer SubLayer"
+#define EDR_SUBLAYER_DESCRIPTION L"SubLayer for EDR Silencer filters"
+
 // Manually define the GUID for FWPM_CONDITION_IP_REMOTE_ADDRESS if not already defined
 // This is necessary because some MinGW versions don't have the latest Windows SDK headers.
 // {AF2001D3-33EC-4296-9C2F-A5403065424A}
