@@ -224,10 +224,6 @@ BOOL GetProviderGUIDByDescription(PCWSTR providerDescription, GUID* outProviderG
         return FALSE;
     }
 
-    FWPM_PROVIDER0 provider = {0};
-    provider.displayData.name = EDR_PROVIDER_NAME;
-    provider.displayData.description = EDR_PROVIDER_DESCRIPTION;
-
     BOOL found = FALSE;
     for (UINT32 i = 0; i < numProviders; i++) {
         if (providers[i]->displayData.description != NULL) {
