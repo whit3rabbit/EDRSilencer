@@ -9,33 +9,32 @@ BOOL CheckProcessIntegrityLevel() {
 
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-            printf("[-] OpenThreadToken failed with error code: 0x%x.\n", GetLastError());
+            printf("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
-            printf("[-] OpenProcessToken failed with error code: 0x%x.\n", GetLastError());
+            printf("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
     }
 
-    // Get the size of the integrity level information
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, NULL, 0, &dwLength) && 
         GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-        printf("[-] GetTokenInformation failed with error code: 0x%x.\n", GetLastError());
+                printf("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
     pTIL = (PTOKEN_MANDATORY_LABEL)LocalAlloc(LPTR, dwLength);
     if (pTIL == NULL) {
-        printf("[-] LocalAlloc failed with error code: 0x%x.\n", GetLastError());
+                printf("[-] LocalAlloc failed with error code: 0x%lX.\n", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, pTIL, dwLength, &dwLength)) {
-        printf("[-] GetTokenInformation failed with error code: 0x%x.\n", GetLastError());
+                printf("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
         LocalFree(pTIL);
         CloseHandle(hToken);
         return FALSE;
@@ -61,25 +60,24 @@ BOOL CheckProcessIntegrityLevel() {
     return isHighIntegrity;
 }
 
-// Enable SeDebugPrivilege to obtain full path of running processes
 BOOL EnableSeDebugPrivilege() {
 	HANDLE hToken = NULL;
 	TOKEN_PRIVILEGES tokenPrivileges = {0};
 	
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-            printf("[-] OpenThreadToken failed with error code: 0x%x.\n", GetLastError());
+                        printf("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &hToken)) {
-            printf("[-] OpenProcessToken failed with error code: 0x%x.\n", GetLastError());
+                    printf("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
     }
 
 	if (!LookupPrivilegeValueA(NULL, "SeDebugPrivilege", &tokenPrivileges.Privileges[0].Luid)){
-        printf("[-] LookupPrivilegeValueA failed with error code: 0x%x.\n", GetLastError());
+                printf("[-] LookupPrivilegeValueA failed with error code: 0x%lX.\n", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
@@ -88,7 +86,7 @@ BOOL EnableSeDebugPrivilege() {
 	tokenPrivileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
 	if (!AdjustTokenPrivileges(hToken, FALSE, &tokenPrivileges, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
-        printf("[-] AdjustTokenPrivileges failed with error code: 0x%x.\n", GetLastError());
+                printf("[-] AdjustTokenPrivileges failed with error code: 0x%lX.\n", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
@@ -107,7 +105,7 @@ void CharArrayToWCharArray(const char charArray[], WCHAR wCharArray[], size_t wC
     int result = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, wCharArray, wCharArraySize);
 
     if (result == 0) {
-        printf("[-] MultiByteToWideChar failed with error code: 0x%x.\n", GetLastError());
+                printf("[-] MultiByteToWideChar failed with error code: 0x%lX.\n", GetLastError());
         wCharArray[0] = L'\0';
     }
 }
@@ -117,7 +115,8 @@ BOOL GetDriveName(PCWSTR filePath, wchar_t* driveName, size_t driveNameSize) {
         return FALSE;
     }
     const wchar_t *colon = wcschr(filePath, L':');
-    if (colon && (colon - filePath + 1) < driveNameSize) {
+          
+    if (colon && (size_t)(colon - filePath + 1) < driveNameSize) {    
         wcsncpy(driveName, filePath, colon - filePath + 1);
         driveName[colon - filePath + 1] = L'\0';
         return TRUE;
@@ -207,20 +206,20 @@ BOOL GetProviderGUIDByDescription(PCWSTR providerDescription, GUID* outProviderG
 
     result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_DEFAULT, NULL, NULL, &hEngine);
     if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmEngineOpen0 failed with error code: 0x%x.\n", result);
+                printf("[-] FwpmEngineOpen0 failed with error code: 0x%lX.\n", result);
         return FALSE;
     }
 
     result = FwpmProviderCreateEnumHandle0(hEngine, NULL, &enumHandle);
     if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmProviderCreateEnumHandle0 failed with error code: 0x%x.\n", result);
+                printf("[-] FwpmProviderCreateEnumHandle0 failed with error code: 0x%lX.\n", result);
         FwpmEngineClose0(hEngine);
         return FALSE;
     }
 
     result = FwpmProviderEnum0(hEngine, enumHandle, 100, &providers, &numProviders);
     if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmProviderEnum0 failed with error code: 0x%x.\n", result);
+                printf("[-] FwpmProviderEnum0 failed with error code: 0x%lX.\n", result);
         FwpmEngineClose0(hEngine);
         return FALSE;
     }
@@ -243,4 +242,21 @@ BOOL GetProviderGUIDByDescription(PCWSTR providerDescription, GUID* outProviderG
     FwpmProviderDestroyEnumHandle0(hEngine, enumHandle);
     FwpmEngineClose0(hEngine);
     return found;
+}
+
+// Function to get the full path of a process from its PID
+BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars) {
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+    if (hProcess == NULL) {
+        // Could fail for system processes, which is expected
+        return FALSE;
+    }
+
+    if (GetModuleFileNameExW(hProcess, NULL, fullPath, maxChars) == 0) {
+        CloseHandle(hProcess);
+        return FALSE;
+    }
+
+    CloseHandle(hProcess);
+    return TRUE;
 }

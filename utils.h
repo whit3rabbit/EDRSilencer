@@ -3,6 +3,14 @@
 #include <fwpmu.h>
 #include <stdio.h>
 #include <tlhelp32.h>
+#include <string.h> // For strcmp
+#include <strings.h> // For strcasecmp on MinGW
+#include <psapi.h>
+
+// Manually define the GUID for FWPM_CONDITION_IP_REMOTE_ADDRESS if not already defined
+// This is necessary because some MinGW versions don't have the latest Windows SDK headers.
+// {AF2001D3-33EC-4296-9C2F-A5403065424A}
+DEFINE_GUID(FWPM_CONDITION_IP_REMOTE_ADDRESS, 0xaf2001d3, 0x33ec, 0x4296, 0x9c, 0x2f, 0xa5, 0x40, 0x30, 0x65, 0x42, 0x4a);
 
 // d78e1e87-8644-4ea5-9437-d809ecefc971
 DEFINE_GUID(
