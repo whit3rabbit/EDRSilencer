@@ -1,5 +1,5 @@
-#include <strsafe.h>
 #include "utils.h"
+#include <strsafe.h>
 
 const char XOR_KEY = 0x42;
 

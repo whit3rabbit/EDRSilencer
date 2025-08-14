@@ -1,6 +1,3 @@
-#include <winsock2.h>
-#include <windows.h>
-#include <fwpmu.h> // For Windows Filtering Platform
 
 #include "utils.h"
 #include "process.h"
