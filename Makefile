@@ -1,48 +1,71 @@
-# Compiler and Linker
+# Compiler
 CC = x86_64-w64-mingw32-gcc
 
-# Source files
-SRCS = EDRSilencer.c utils.c process.c
-OBJS = $(SRCS:.c=.o)
+# --- Source File Definitions ---
+# Common source files used by both EXE and DLL
+COMMON_SRCS = core.c utils.c process.c
+# Entry-point source for the Executable
+EXE_SRC = main.c
+# Entry-point source for the DLL
+DLL_SRC = dllmain.c
 
-# Executable name
-TARGET_RELEASE = EDRSilencer.exe
-TARGET_DEBUG = EDRSilencer_debug.exe
+# --- Target Filename Definitions ---
+TARGET_EXE_RELEASE = EDRSilencer.exe
+TARGET_EXE_DEBUG = EDRSilencer_debug.exe
+TARGET_DLL_RELEASE = EDRSilencer.dll
+TARGET_DLL_DEBUG = EDRSilencer_debug.dll
 
-# Flags
-# CFLAGS are for compiling C code
-# LDFLAGS are for the linking stage
-# -Wall: Enable all warnings
-# -Wextra: Enable extra warnings
-# -O2: Optimization level 2
-# -s: Strip all symbols from the output file (crucial for release)
-# -lfwpuclnt: Link against the Windows Filtering Platform library
+# --- Flag Definitions ---
+# Common flags for C compilation
 CFLAGS_RELEASE = -Wall -Wextra -O2
-LDFLAGS_RELEASE = -s -lfwpuclnt
-
-# -g: Include debug symbols
 CFLAGS_DEBUG = -Wall -Wextra -g
-LDFLAGS_DEBUG = -lfwpuclnt
+# Linker flags for building an EXE
+LDFLAGS_EXE = -lfwpuclnt
+# Linker flags for building a DLL (note the -shared flag)
+LDFLAGS_DLL = -lfwpuclnt -shared
 
-.PHONY: all release debug clean
+.PHONY: all release debug dll dll-debug clean
 
+# --- Main Targets ---
+
+# Default target: 'make' or 'make all' will build the release EXE
 all: release
 
-# Target for building the release version
-release: $(TARGET_RELEASE)
+# 'make release' builds the release EXE
+release: $(TARGET_EXE_RELEASE)
 
-$(TARGET_RELEASE): $(SRCS)
-	$(CC) $(CFLAGS_RELEASE) $^ -o $@ $(LDFLAGS_RELEASE)
-	@echo "Release build complete: $(TARGET_RELEASE)"
+# 'make debug' builds the debug EXE
+debug: $(TARGET_EXE_DEBUG)
 
-# Target for building the debug version
-debug: $(TARGET_DEBUG)
+# 'make dll' builds the release DLL
+dll: $(TARGET_DLL_RELEASE)
 
-$(TARGET_DEBUG): $(SRCS)
-	$(CC) $(CFLAGS_DEBUG) $^ -o $@ $(LDFLAGS_DEBUG)
-	@echo "Debug build complete: $(TARGET_DEBUG)"
+# 'make dll-debug' builds the debug DLL
+dll-debug: $(TARGET_DLL_DEBUG)
 
-# Target for cleaning up build files
+# --- Build Rules ---
+
+# Rule to build the release EXE
+$(TARGET_EXE_RELEASE): $(COMMON_SRCS) $(EXE_SRC)
+	$(CC) $(CFLAGS_RELEASE) $^ -o $@ $(LDFLAGS_EXE) -s
+	@echo "Release EXE build complete: $@"
+
+# Rule to build the debug EXE
+$(TARGET_EXE_DEBUG): $(COMMON_SRCS) $(EXE_SRC)
+	$(CC) $(CFLAGS_DEBUG) $^ -o $@ $(LDFLAGS_EXE)
+	@echo "Debug EXE build complete: $@"
+
+# Rule to build the release DLL
+$(TARGET_DLL_RELEASE): $(COMMON_SRCS) $(DLL_SRC)
+	$(CC) $(CFLAGS_RELEASE) $^ -o $@ $(LDFLAGS_DLL) -s
+	@echo "Release DLL build complete: $@"
+
+# Rule to build the debug DLL
+$(TARGET_DLL_DEBUG): $(COMMON_SRCS) $(DLL_SRC)
+	$(CC) $(CFLAGS_DEBUG) $^ -o $@ $(LDFLAGS_DLL)
+	@echo "Debug DLL build complete: $@"
+
+# --- Cleanup Target ---
 clean:
-	rm -f $(TARGET_RELEASE) $(TARGET_DEBUG) *.o
+	rm -f $(TARGET_EXE_RELEASE) $(TARGET_EXE_DEBUG) $(TARGET_DLL_RELEASE) $(TARGET_DLL_DEBUG) *.o
 	@echo "Cleanup complete."

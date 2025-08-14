@@ -3,3 +3,4 @@ EDRSilencer_debug.exe
 EDRSilencer.o
 EDRSilencer_debug.o
 *.bak
+*.dll

@@ -87,7 +87,28 @@ To blend in with legitimate system activity, you should change this name to some
 ## Testing Environment
 Tested in Windows 10 and Windows Server 2016
 
-## Usage
+## Building the Project
+
+This project uses a `Makefile` for easy compilation of both the executable and the DLL. The following targets are available:
+
+-   `make` or `make release`: Compiles the release version of the executable (`EDRSilencer.exe`).
+-   `make debug`: Compiles the debug version of the executable (`EDRSilencer_debug.exe`).
+-   `make dll`: Compiles the release version of the DLL (`EDRSilencer.dll`).
+-   `make dll-debug`: Compiles the debug version of the DLL (`EDRSilencer_debug.dll`).
+-   `make clean`: Removes all compiled files and object files.
+
+To compile, simply run the desired `make` command from the project root. For example, to build the release executable:
+
+```bash
+make
+```
+
+To build the release DLL:
+```bash
+make dll
+```
+
+## Executable Usage
 ```
 Usage: EDRSilencer.exe [--quiet | -q] <command>
 
@@ -102,10 +123,25 @@ Options:
 - `-q`, `--quiet`: Suppress all console output. This is useful when running the tool from a C2 framework or in other non-interactive sessions.
 ```
 
-## Compile
-```
-x86_64-w64-mingw32-gcc EDRSilencer.c utils.c process.c -o EDRSilencer.exe -lfwpuclnt
-```
+## DLL Usage
+
+The project can also be compiled as a DLL (`EDRSilencer.dll`) for use with tools like `rundll32.exe` or for injection into other processes.
+
+### How to Use
+
+To ensure safe initialization, you must call the exported `Initialize` function after the DLL is loaded. This will trigger the EDR blocking functionality in a separate thread, avoiding deadlocks.
+
+By default, the DLL operates in **quiet mode**.
+
+### Exported Functions
+
+The DLL exports the following functions, which can be called by other processes:
+
+-   `Initialize(void)`: **(Required)** Call this function first to activate the EDR blocking rules. It runs quietly by default.
+-   `BlockEDR(BOOL quiet)`: Manually triggers the blocking of known EDRs. Set `quiet` to `TRUE` or `FALSE` to control console output.
+-   `AddRuleByPath(BOOL quiet, const char* processPath)`: Adds a block rule for a specific process executable path.
+-   `RemoveAllRules(BOOL quiet)`: Removes all filtering rules created by this tool.
+-   `RemoveRuleByID(BOOL quiet, const char* ruleIdStr)`: Removes a specific rule by its ID.
 
 ## Example
 ### Detect and block the outbound traffic of running EDR processes
