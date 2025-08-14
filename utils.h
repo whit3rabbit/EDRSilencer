@@ -8,6 +8,7 @@
 #include <psapi.h>
 
 // Define provider and sublayer information
+// OPSEC: Change this to a less conspicuous name (e.g., "Microsoft Corporation") to avoid easy detection in logs.
 #define EDR_PROVIDER_NAME L"EDR Silencer Provider"
 #define EDR_PROVIDER_DESCRIPTION L"Provider for EDR Silencer to block network traffic"
 #define EDR_SUBLAYER_NAME L"EDR Silencer SubLayer"

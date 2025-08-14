@@ -60,6 +60,30 @@ After successfully regenerating and verifying `process.c`, recompile the entire 
 make
 ```
 
+## Improving Stealth
+
+For better operational security, it is recommended to change the default provider name used by this tool. When a new provider is registered with the Windows Filtering Platform (WFP), its name may be logged, making the default value of `EDR Silencer Provider` a clear indicator of the tool's presence.
+
+To blend in with legitimate system activity, you should change this name to something more common before compiling.
+
+**How to Change the Provider Name**
+
+1.  Open the `utils.h` file.
+2.  Locate the following line:
+
+    ```c
+    #define EDR_PROVIDER_NAME L"EDR Silencer Provider"
+    ```
+
+3.  Replace `"EDR Silencer Provider"` with a more generic name. Here are some suggestions that mimic legitimate software providers:
+
+    -   `"Microsoft Corporation"`
+    -   `"VMware, Inc."`
+    -   `"CrowdStrike, Inc."`
+    -   `"Cisco Systems, Inc."`
+
+4.  Save the file and recompile the project using `make`.
+
 ## Testing Environment
 Tested in Windows 10 and Windows Server 2016
 
