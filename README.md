@@ -34,23 +34,19 @@ Tested in Windows 10 and Windows Server 2016
 
 ## Usage
 ```
-Usage: EDRSilencer.exe <blockedr/block/unblockall/unblock>
-- Add WFP filters to block the IPv4 and IPv6 outbound traffic of all detected EDR processes:
-  EDRSilencer.exe blockedr
+Usage: EDRSilencer.exe <command>
 
-- Add WFP filters to block the IPv4 and IPv6 outbound traffic of a specific process (full path is required):
-  EDRSilencer.exe block "C:\Windows\System32\curl.exe"
-
-- Remove all WFP filters applied by this tool:
-  EDRSilencer.exe unblockall
-
-- Remove a specific WFP filter based on filter id:
-  EDRSilencer.exe unblock <filter id>
+Commands:
+- `blockedr`: Add WFP filters to block the IPv4 and IPv6 outbound traffic of all detected EDR processes.
+- `add <path>`: Add WFP filters to block the IPv4 and IPv6 outbound traffic of a specific process (full path is required).
+  - Example: `EDRSilencer.exe add "C:\Windows\System32\curl.exe"`
+- `removeall`: Remove all WFP filters applied by this tool.
+- `remove <id>`: Remove a specific WFP filter based on its filter ID.
 ```
 
 ## Compile
 ```
-x86_64-w64-mingw32-gcc EDRSilencer.c utils.c -o EDRSilencer.exe -lfwpuclnt
+x86_64-w64-mingw32-gcc EDRSilencer.c utils.c process.c -o EDRSilencer.exe -lfwpuclnt
 ```
 
 ## Example

