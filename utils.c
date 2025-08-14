@@ -1,7 +1,38 @@
 #include <strsafe.h>
 #include "utils.h"
 
-BOOL g_isQuiet = FALSE;
+const char XOR_KEY = 0x42;
+
+
+void ConsoleWriteA(HANDLE hConsole, const char* format, ...) {
+    char buffer[1024];
+    DWORD bytesWritten;
+    va_list args;
+
+    va_start(args, format);
+    // Using FormatMessage is complex for simple substitutions.
+    // vsnprintf_s is CRT, so we'll use a combination of Win32 APIs.
+    // A simpler way for non-CRT is to format it manually or use a safer sprint replacement.
+    // For this example, we use StringCchVPrintfA for safe formatting.
+    if (SUCCEEDED(StringCchVPrintfA(buffer, sizeof(buffer), format, args))) {
+        WriteFile(hConsole, buffer, lstrlenA(buffer), &bytesWritten, NULL);
+    }
+    va_end(args);
+}
+
+void ConsoleWriteW(HANDLE hConsole, const wchar_t* format, ...) {
+    wchar_t buffer[1024];
+    DWORD bytesWritten;
+    va_list args;
+
+    va_start(args, format);
+    if (SUCCEEDED(StringCchVPrintfW(buffer, sizeof(buffer)/sizeof(wchar_t), format, args))) {
+        // WriteConsoleW is better for wide characters
+        WriteConsoleW(hConsole, buffer, lstrlenW(buffer), &bytesWritten, NULL);
+    }
+    va_end(args);
+}
+
 
 BOOL CheckProcessIntegrityLevel() {
     HANDLE hToken = NULL;
@@ -12,40 +43,40 @@ BOOL CheckProcessIntegrityLevel() {
 
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-            PRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
+            EPRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
-            PRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
+            EPRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
     }
 
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, NULL, 0, &dwLength) && 
         GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-                EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
+        EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
-    pTIL = (PTOKEN_MANDATORY_LABEL)LocalAlloc(LPTR, dwLength);
+    pTIL = (PTOKEN_MANDATORY_LABEL)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, dwLength);
     if (pTIL == NULL) {
-                EPRINTF("[-] LocalAlloc failed with error code: 0x%lX.\n", GetLastError());
+        EPRINTF("[-] HeapAlloc failed with error code: 0x%lX.\n", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, pTIL, dwLength, &dwLength)) {
-                EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
-        LocalFree(pTIL);
+        EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
+        HeapFree(g_hHeap, 0, pTIL);
         CloseHandle(hToken);
         return FALSE;
     }
 
     if (pTIL->Label.Sid == NULL || *GetSidSubAuthorityCount(pTIL->Label.Sid) < 1) {
         EPRINTF("[-] SID structure is invalid.\n");
-        LocalFree(pTIL);
+        HeapFree(g_hHeap, 0, pTIL);
         CloseHandle(hToken);
         return FALSE;
     }
@@ -58,7 +89,7 @@ BOOL CheckProcessIntegrityLevel() {
         EPRINTF("[-] This program requires to run in high integrity level.\n");
     }
 
-    LocalFree(pTIL);
+    HeapFree(g_hHeap, 0, pTIL);
     CloseHandle(hToken);
     return isHighIntegrity;
 }
@@ -69,18 +100,18 @@ BOOL EnableSeDebugPrivilege() {
 	
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-                        EPRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
+            EPRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &hToken)) {
-                    EPRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
+            EPRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
     }
 
 	if (!LookupPrivilegeValueA(NULL, "SeDebugPrivilege", &tokenPrivileges.Privileges[0].Luid)){
-                EPRINTF("[-] LookupPrivilegeValueA failed with error code: 0x%lX.\n", GetLastError());
+        EPRINTF("[-] LookupPrivilegeValueA failed with error code: 0x%lX.\n", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
@@ -89,7 +120,7 @@ BOOL EnableSeDebugPrivilege() {
 	tokenPrivileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
 	if (!AdjustTokenPrivileges(hToken, FALSE, &tokenPrivileges, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
-                EPRINTF("[-] AdjustTokenPrivileges failed with error code: 0x%lX.\n", GetLastError());
+        EPRINTF("[-] AdjustTokenPrivileges failed with error code: 0x%lX.\n", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
@@ -108,7 +139,7 @@ void CharArrayToWCharArray(const char charArray[], WCHAR wCharArray[], size_t wC
     int result = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, wCharArray, wCharArraySize);
 
     if (result == 0) {
-                EPRINTF("[-] MultiByteToWideChar failed with error code: 0x%lX.\n", GetLastError());
+        EPRINTF("[-] MultiByteToWideChar failed with error code: 0x%lX.\n", GetLastError());
         wCharArray[0] = L'\0';
     }
 }
@@ -117,11 +148,11 @@ BOOL GetDriveName(PCWSTR filePath, wchar_t* driveName, size_t driveNameSize) {
     if (!filePath) {
         return FALSE;
     }
+    // wcschr is a fundamental CRT function, often inlined by the compiler.
     const wchar_t *colon = wcschr(filePath, L':');
           
     if (colon && (size_t)(colon - filePath + 1) < driveNameSize) {    
-        wcsncpy(driveName, filePath, colon - filePath + 1);
-        driveName[colon - filePath + 1] = L'\0';
+        StringCchCopyNW(driveName, driveNameSize, filePath, colon - filePath + 1);
         return TRUE;
     } else {
         return FALSE;
@@ -143,16 +174,17 @@ ErrorCode ConvertToNtPath(PCWSTR filePath, wchar_t* ntPathBuffer, size_t bufferS
         return CUSTOM_FAILED_TO_GET_DOS_DEVICE_NAME;
     }
 
-    HRESULT hr = StringCchPrintfW(ntPathBuffer, bufferSize / sizeof(wchar_t), L"%ls%ls", ntDrivePath, filePath + wcslen(driveName));
+    HRESULT hr = StringCchPrintfW(ntPathBuffer, bufferSize / sizeof(wchar_t), L"%ls%ls", ntDrivePath, filePath + lstrlenW(driveName));
     if (FAILED(hr)) {
         return CUSTOM_STRING_FORMATTING_ERROR;
     }
     
-    for (size_t i = 0; ntPathBuffer[i] != L'\0'; ++i) {
-        ntPathBuffer[i] = towlower(ntPathBuffer[i]);
-    }
+    // CharLowerW is the Win32 equivalent for converting a string to lowercase.
+    CharLowerW(ntPathBuffer);
+
     return CUSTOM_SUCCESS;
 }
+
 
 BOOL FileExists(PCWSTR filePath) {
     if (!filePath) {
@@ -167,10 +199,6 @@ BOOL FileExists(PCWSTR filePath) {
     return TRUE;
 }
 
-// SECURITY WARNING: This function is vulnerable to a Time-of-Check-to-Time-of-Use (TOCTOU) race condition.
-// There is a time window between the FileExists check and when the path is used to create the App ID.
-// An attacker could swap the file in that window, causing a rule to be applied to the wrong process.
-// Given the tool's purpose (avoiding file handles), this risk is noted but accepted.
 ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId) {
     if (!FileExists(filePath)) {
         return CUSTOM_FILE_NOT_FOUND;
@@ -181,37 +209,36 @@ ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId
     if (errorCode != CUSTOM_SUCCESS) {
         return errorCode;
     }
-    *appId = (FWP_BYTE_BLOB*)malloc(sizeof(FWP_BYTE_BLOB));
+    *appId = (FWP_BYTE_BLOB*)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, sizeof(FWP_BYTE_BLOB));
     if (!*appId) {
         return CUSTOM_MEMORY_ALLOCATION_ERROR;
     }
 
-    (*appId)->size = wcslen(ntPath) * sizeof(WCHAR) + sizeof(WCHAR);
+    (*appId)->size = (lstrlenW(ntPath) + 1) * sizeof(WCHAR);
     
-    (*appId)->data = (UINT8*)malloc((*appId)->size);
+    (*appId)->data = (UINT8*)HeapAlloc(g_hHeap, 0, (*appId)->size);
     if (!(*appId)->data) {
-        free(*appId);
+        HeapFree(g_hHeap, 0, *appId);
         return CUSTOM_MEMORY_ALLOCATION_ERROR;
     }
-    memcpy((*appId)->data, ntPath, (*appId)->size);
+    // memcpy is also CRT, but often intrinsic. CopyMemory is the Win32 equivalent.
+    CopyMemory((*appId)->data, ntPath, (*appId)->size);
     return CUSTOM_SUCCESS;
 }
 
 void FreeAppId(FWP_BYTE_BLOB* appId) {
     if (appId) {
         if (appId->data) {
-            free(appId->data);
+            HeapFree(g_hHeap, 0, appId->data);
         }
-        free(appId);
+        HeapFree(g_hHeap, 0, appId);
     }
 }
 
 // Function to get the full path of a process from its PID
 BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars) {
-    // Use PROCESS_QUERY_LIMITED_INFORMATION for better security and compatibility
     HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (hProcess == NULL) {
-        // This can fail for protected system processes, which is expected.
         return FALSE;
     }
 
@@ -223,4 +250,23 @@ BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars) {
 
     CloseHandle(hProcess);
     return TRUE;
+}
+
+char* decryptString(struct EncryptedString encStr) {
+    if (!encStr.data || encStr.size == 0) {
+        return NULL;
+    }
+
+    char* decrypted = (char*)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, encStr.size + 1);
+    if (!decrypted) {
+        EPRINTF("[-] Failed to allocate memory for decrypted string.\n");
+        return NULL;
+    }
+
+    for (size_t i = 0; i < encStr.size; ++i) {
+        decrypted[i] = encStr.data[i] ^ XOR_KEY;
+    }
+    decrypted[encStr.size] = '\0';
+
+    return decrypted;
 }

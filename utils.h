@@ -1,21 +1,26 @@
 #include <windows.h>
 #include <initguid.h>
 #include <fwpmu.h>
-#include <stdio.h>
 #include <tlhelp32.h>
-#include <string.h> // For strcmp
-#include <strings.h> // For strcasecmp on MinGW
 #include <psapi.h>
+#include "process.h" // For EncryptedString struct
 
 extern BOOL g_isQuiet;
+extern HANDLE g_hHeap; // Global handle for our private heap
+extern const char XOR_KEY;
+
+// Custom console writing function prototypes
+void ConsoleWriteA(HANDLE hConsole, const char* format, ...);
+void ConsoleWriteW(HANDLE hConsole, const wchar_t* format, ...);
 
 // For standard output (suppressed in quiet mode)
-#define PRINTF(...) do { if (!g_isQuiet) { printf(__VA_ARGS__); } } while (0)
-#define WPRINTF(...) do { if (!g_isQuiet) { wprintf(__VA_ARGS__); } } while (0)
+#define PRINTF(...) do { if (!g_isQuiet) { ConsoleWriteA(GetStdHandle(STD_OUTPUT_HANDLE), __VA_ARGS__); } } while (0)
+#define WPRINTF(...) do { if (!g_isQuiet) { ConsoleWriteW(GetStdHandle(STD_OUTPUT_HANDLE), __VA_ARGS__); } } while (0)
 
 // For error output (always printed to stderr)
-#define EPRINTF(...) do { fprintf(stderr, __VA_ARGS__); } while (0)
-#define EWPRINTF(...) do { fwprintf(stderr, __VA_ARGS__); } while (0)
+#define EPRINTF(...) do { ConsoleWriteA(GetStdHandle(STD_ERROR_HANDLE), __VA_ARGS__); } while (0)
+#define EWPRINTF(...) do { ConsoleWriteW(GetStdHandle(STD_ERROR_HANDLE), __VA_ARGS__); } while (0)
+
 
 // Define provider and sublayer information
 // OPSEC: Change this to a less conspicuous name (e.g., "Microsoft Corporation") to avoid easy detection in logs.
@@ -23,6 +28,8 @@ extern BOOL g_isQuiet;
 #define EDR_PROVIDER_DESCRIPTION L"Provider for EDR Silencer to block network traffic"
 #define EDR_SUBLAYER_NAME L"EDR Silencer SubLayer"
 #define EDR_SUBLAYER_DESCRIPTION L"SubLayer for EDR Silencer filters"
+#define EDR_FILTER_NAME L"EDRSilencer Block Rule"
+#define EDR_FILTER_DESCRIPTION L"Blocks outbound connections for a specific EDR process"
 
 // Manually define the GUID for FWPM_CONDITION_IP_REMOTE_ADDRESS if not already defined
 // This is necessary because some MinGW versions don't have the latest Windows SDK headers.
@@ -84,3 +91,4 @@ ErrorCode ConvertToNtPath(PCWSTR filePath, wchar_t* ntPathBuffer, size_t bufferS
 BOOL FileExists(PCWSTR filePath);
 ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId);
 void FreeAppId(FWP_BYTE_BLOB* appId);
+char* decryptString(struct EncryptedString encStr);
