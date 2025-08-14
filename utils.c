@@ -179,8 +179,6 @@ ErrorCode ConvertToNtPath(PCWSTR filePath, wchar_t* ntPathBuffer, size_t bufferS
         return CUSTOM_STRING_FORMATTING_ERROR;
     }
     
-    // CharLowerW is the Win32 equivalent for converting a string to lowercase.
-    CharLowerW(ntPathBuffer);
 
     return CUSTOM_SUCCESS;
 }

