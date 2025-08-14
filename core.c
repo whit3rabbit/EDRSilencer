@@ -159,6 +159,7 @@ void configureNetworkFilters() {
 
     for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
         decryptedNames[i] = decryptString(processData[i]);
+        PRINTF("[DEBUG] Decrypted Name #%zu: %s\n", i, decryptedNames[i] ? decryptedNames[i] : "!!--NULL--!!");
     }
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);

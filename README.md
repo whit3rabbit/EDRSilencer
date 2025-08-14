@@ -21,13 +21,16 @@ The following `make` targets are available from the project root:
 -   `make clean`: Removes all compiled artifacts.
 
 **To build the executable:**
+
 ```bash
 make
 ```
 
 **To build the complete Cobalt Strike DLL package:**
+
 ```bash
-make dll```
+make dll
+```
 
 ### Improving Stealth (Pre-Compilation)
 
@@ -35,6 +38,7 @@ For better operational security, it is highly recommended to change the default 
 
 1.  Open the `utils.h` file.
 2.  Locate and modify the following lines:
+
     ```c
     #define EDR_PROVIDER_NAME L"EDR Silencer Provider"
     #define EDR_SUBLAYER_NAME L"EDR Silencer SubLayer"
@@ -93,6 +97,12 @@ Commands:
 
 Options:
 - `-q`, `--quiet`: Suppress all console output.
+```
+
+### DLL Usage
+
+```bash
+rundll32 EDRSilencer.dll,Initialize
 ```
 
 ### Example
