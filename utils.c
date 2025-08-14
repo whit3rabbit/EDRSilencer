@@ -1,4 +1,7 @@
+#include <strsafe.h>
 #include "utils.h"
+
+BOOL g_isQuiet = FALSE;
 
 BOOL CheckProcessIntegrityLevel() {
     HANDLE hToken = NULL;
@@ -9,39 +12,39 @@ BOOL CheckProcessIntegrityLevel() {
 
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-            printf("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
+            PRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
-            printf("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
+            PRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
     }
 
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, NULL, 0, &dwLength) && 
         GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-                printf("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
+                EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
     pTIL = (PTOKEN_MANDATORY_LABEL)LocalAlloc(LPTR, dwLength);
     if (pTIL == NULL) {
-                printf("[-] LocalAlloc failed with error code: 0x%lX.\n", GetLastError());
+                EPRINTF("[-] LocalAlloc failed with error code: 0x%lX.\n", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, pTIL, dwLength, &dwLength)) {
-                printf("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
+                EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
         LocalFree(pTIL);
         CloseHandle(hToken);
         return FALSE;
     }
 
     if (pTIL->Label.Sid == NULL || *GetSidSubAuthorityCount(pTIL->Label.Sid) < 1) {
-        printf("[-] SID structure is invalid.\n");
+        EPRINTF("[-] SID structure is invalid.\n");
         LocalFree(pTIL);
         CloseHandle(hToken);
         return FALSE;
@@ -52,7 +55,7 @@ BOOL CheckProcessIntegrityLevel() {
     if (dwIntegrityLevel >= SECURITY_MANDATORY_HIGH_RID) {
         isHighIntegrity = TRUE;
     } else {
-        printf("[-] This program requires to run in high integrity level.\n");
+        EPRINTF("[-] This program requires to run in high integrity level.\n");
     }
 
     LocalFree(pTIL);
@@ -66,18 +69,18 @@ BOOL EnableSeDebugPrivilege() {
 	
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-                        printf("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
+                        EPRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &hToken)) {
-                    printf("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
+                    EPRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
             return FALSE;
         }
     }
 
 	if (!LookupPrivilegeValueA(NULL, "SeDebugPrivilege", &tokenPrivileges.Privileges[0].Luid)){
-                printf("[-] LookupPrivilegeValueA failed with error code: 0x%lX.\n", GetLastError());
+                EPRINTF("[-] LookupPrivilegeValueA failed with error code: 0x%lX.\n", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
@@ -86,13 +89,13 @@ BOOL EnableSeDebugPrivilege() {
 	tokenPrivileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
 	if (!AdjustTokenPrivileges(hToken, FALSE, &tokenPrivileges, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
-                printf("[-] AdjustTokenPrivileges failed with error code: 0x%lX.\n", GetLastError());
+                EPRINTF("[-] AdjustTokenPrivileges failed with error code: 0x%lX.\n", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
 
     if (GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
-        printf("[-] Failed to get SeDebugPrivilege. You might not be able to get the process handle of the EDR process.\n");
+        EPRINTF("[-] Failed to get SeDebugPrivilege. You might not be able to get the process handle of the EDR process.\n");
 		CloseHandle(hToken);
 		return FALSE;
     }
@@ -105,7 +108,7 @@ void CharArrayToWCharArray(const char charArray[], WCHAR wCharArray[], size_t wC
     int result = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, wCharArray, wCharArraySize);
 
     if (result == 0) {
-                printf("[-] MultiByteToWideChar failed with error code: 0x%lX.\n", GetLastError());
+                EPRINTF("[-] MultiByteToWideChar failed with error code: 0x%lX.\n", GetLastError());
         wCharArray[0] = L'\0';
     }
 }
@@ -140,7 +143,10 @@ ErrorCode ConvertToNtPath(PCWSTR filePath, wchar_t* ntPathBuffer, size_t bufferS
         return CUSTOM_FAILED_TO_GET_DOS_DEVICE_NAME;
     }
 
-    swprintf(ntPathBuffer, bufferSize, L"%ls%ls", ntDrivePath, filePath + wcslen(driveName));
+    HRESULT hr = StringCchPrintfW(ntPathBuffer, bufferSize / sizeof(wchar_t), L"%ls%ls", ntDrivePath, filePath + wcslen(driveName));
+    if (FAILED(hr)) {
+        return CUSTOM_STRING_FORMATTING_ERROR;
+    }
     
     for (size_t i = 0; ntPathBuffer[i] != L'\0'; ++i) {
         ntPathBuffer[i] = towlower(ntPathBuffer[i]);
@@ -161,6 +167,10 @@ BOOL FileExists(PCWSTR filePath) {
     return TRUE;
 }
 
+// SECURITY WARNING: This function is vulnerable to a Time-of-Check-to-Time-of-Use (TOCTOU) race condition.
+// There is a time window between the FileExists check and when the path is used to create the App ID.
+// An attacker could swap the file in that window, causing a rule to be applied to the wrong process.
+// Given the tool's purpose (avoiding file handles), this risk is noted but accepted.
 ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId) {
     if (!FileExists(filePath)) {
         return CUSTOM_FILE_NOT_FOUND;

@@ -89,14 +89,17 @@ Tested in Windows 10 and Windows Server 2016
 
 ## Usage
 ```
-Usage: EDRSilencer.exe <command>
+Usage: EDRSilencer.exe [--quiet | -q] <command>
 
 Commands:
-- `blockedr`: Add WFP filters to block the IPv4 and IPv6 outbound traffic of all detected EDR processes.
-- `add <path>`: Add WFP filters to block the IPv4 and IPv6 outbound traffic of a specific process (full path is required).
+- `blockedr`: Add network rules to block traffic of all detected target processes.
+- `add <path>`: Add a network rule to block traffic for a specific process.
   - Example: `EDRSilencer.exe add "C:\Windows\System32\curl.exe"`
-- `removeall`: Remove all WFP filters applied by this tool.
-- `remove <id>`: Remove a specific WFP filter based on its filter ID.
+- `removeall`: Remove all network rules applied by this tool.
+- `remove <id>`: Remove a specific network rule by its ID.
+
+Options:
+- `-q`, `--quiet`: Suppress all console output. This is useful when running the tool from a C2 framework or in other non-interactive sessions.
 ```
 
 ## Compile

@@ -338,8 +338,6 @@ struct EncryptedString processData[] = {
 
 const size_t PROCESS_DATA_COUNT = sizeof(processData) / sizeof(processData[0]);
 
-static BOOL itemProcessed[sizeof(processData) / sizeof(processData[0])] = { FALSE };
-
 // This function is defined here as it is only used by isProcessInList
 char* decryptString(struct EncryptedString encStr) {
     if (!encStr.data || encStr.size == 0) return NULL;
@@ -350,18 +348,4 @@ char* decryptString(struct EncryptedString encStr) {
     }
     decrypted[encStr.size] = '\0';
     return decrypted;
-}
-
-BOOL isProcessInList(const char* procName) {
-    for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
-        char* decryptedName = decryptString(processData[i]);
-        if (!decryptedName) continue;
-        if (_stricmp(procName, decryptedName) == 0 && !itemProcessed[i]) {
-            itemProcessed[i] = TRUE;
-            free(decryptedName);
-            return TRUE;
-        }
-        free(decryptedName);
-    }
-    return FALSE;
 }

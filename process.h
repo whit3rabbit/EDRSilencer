@@ -21,8 +21,7 @@ extern struct EncryptedString processData[];
 // will not work on an external array declaration.
 extern const size_t PROCESS_DATA_COUNT;
 
-// DECLARATION of the function that checks the process list.
-// This allows EDRSilencer.c to call this function.
-BOOL isProcessInList(const char* procName);
+// Function to decrypt an encrypted string
+char* decryptString(struct EncryptedString encStr);
 
 #endif // PROCESSES_H

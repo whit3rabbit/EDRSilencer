@@ -7,6 +7,16 @@
 #include <strings.h> // For strcasecmp on MinGW
 #include <psapi.h>
 
+extern BOOL g_isQuiet;
+
+// For standard output (suppressed in quiet mode)
+#define PRINTF(...) do { if (!g_isQuiet) { printf(__VA_ARGS__); } } while (0)
+#define WPRINTF(...) do { if (!g_isQuiet) { wprintf(__VA_ARGS__); } } while (0)
+
+// For error output (always printed to stderr)
+#define EPRINTF(...) do { fprintf(stderr, __VA_ARGS__); } while (0)
+#define EWPRINTF(...) do { fwprintf(stderr, __VA_ARGS__); } while (0)
+
 // Define provider and sublayer information
 // OPSEC: Change this to a less conspicuous name (e.g., "Microsoft Corporation") to avoid easy detection in logs.
 #define EDR_PROVIDER_NAME L"EDR Silencer Provider"
@@ -46,6 +56,13 @@ DEFINE_GUID(
    0x84, 0xc3, 0xba, 0x54, 0xdc, 0xb3, 0xb6, 0xb4
 );
 
+typedef enum ExitCode {
+    EXIT_FAILURE_ARGS = 1,
+    EXIT_FAILURE_PRIVS = 2,
+    EXIT_FAILURE_WFP = 3,
+    EXIT_FAILURE_GENERIC = 4
+} ExitCode;
+
 typedef enum ErrorCode {
     CUSTOM_SUCCESS = 0,
     CUSTOM_FILE_NOT_FOUND = 0x1,
@@ -53,6 +70,7 @@ typedef enum ErrorCode {
     CUSTOM_NULL_INPUT = 0x3,
     CUSTOM_DRIVE_NAME_NOT_FOUND = 0x4,
     CUSTOM_FAILED_TO_GET_DOS_DEVICE_NAME = 0x5,
+    CUSTOM_STRING_FORMATTING_ERROR = 0x6,
 } ErrorCode;
 
 #define FWPM_FILTER_FLAG_PERSISTENT (0x00000001)
