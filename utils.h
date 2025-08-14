@@ -56,6 +56,7 @@ typedef enum ErrorCode {
 
 #define FWPM_FILTER_FLAG_PERSISTENT (0x00000001)
 #define FWPM_PROVIDER_FLAG_PERSISTENT (0x00000001)
+BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars);
 BOOL CheckProcessIntegrityLevel();
 BOOL EnableSeDebugPrivilege();
 void CharArrayToWCharArray(const char charArray[], WCHAR wCharArray[], size_t wCharArraySize);
@@ -64,4 +65,3 @@ ErrorCode ConvertToNtPath(PCWSTR filePath, wchar_t* ntPathBuffer, size_t bufferS
 BOOL FileExists(PCWSTR filePath);
 ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId);
 void FreeAppId(FWP_BYTE_BLOB* appId);
-BOOL GetProviderGUIDByDescription(PCWSTR providerDescription, GUID* outProviderGUID);

@@ -196,63 +196,17 @@ void FreeAppId(FWP_BYTE_BLOB* appId) {
     }
 }
 
-// Get provider GUID by description
-BOOL GetProviderGUIDByDescription(PCWSTR providerDescription, GUID* outProviderGUID) {
-    DWORD result = 0;
-    HANDLE hEngine = NULL;
-    HANDLE enumHandle = NULL;
-    FWPM_PROVIDER0** providers = NULL;
-    UINT32 numProviders = 0;
-
-    result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_DEFAULT, NULL, NULL, &hEngine);
-    if (result != ERROR_SUCCESS) {
-                printf("[-] FwpmEngineOpen0 failed with error code: 0x%lX.\n", result);
-        return FALSE;
-    }
-
-    result = FwpmProviderCreateEnumHandle0(hEngine, NULL, &enumHandle);
-    if (result != ERROR_SUCCESS) {
-                printf("[-] FwpmProviderCreateEnumHandle0 failed with error code: 0x%lX.\n", result);
-        FwpmEngineClose0(hEngine);
-        return FALSE;
-    }
-
-    result = FwpmProviderEnum0(hEngine, enumHandle, 100, &providers, &numProviders);
-    if (result != ERROR_SUCCESS) {
-                printf("[-] FwpmProviderEnum0 failed with error code: 0x%lX.\n", result);
-        FwpmEngineClose0(hEngine);
-        return FALSE;
-    }
-
-    BOOL found = FALSE;
-    for (UINT32 i = 0; i < numProviders; i++) {
-        if (providers[i]->displayData.description != NULL) {
-            if (wcscmp(providers[i]->displayData.description, providerDescription) == 0) {
-                *outProviderGUID = providers[i]->providerKey;
-                found = TRUE;
-                break;
-            }
-        }   
-    }
-
-    if (providers) {
-        FwpmFreeMemory0((void**)&providers);
-    }
-
-    FwpmProviderDestroyEnumHandle0(hEngine, enumHandle);
-    FwpmEngineClose0(hEngine);
-    return found;
-}
-
 // Function to get the full path of a process from its PID
 BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars) {
-    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+    // Use PROCESS_QUERY_LIMITED_INFORMATION for better security and compatibility
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (hProcess == NULL) {
-        // Could fail for system processes, which is expected
+        // This can fail for protected system processes, which is expected.
         return FALSE;
     }
 
-    if (GetModuleFileNameExW(hProcess, NULL, fullPath, maxChars) == 0) {
+    DWORD bufferSize = maxChars;
+    if (QueryFullProcessImageNameW(hProcess, 0, fullPath, &bufferSize) == 0) {
         CloseHandle(hProcess);
         return FALSE;
     }

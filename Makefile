@@ -2,7 +2,7 @@
 CC = x86_64-w64-mingw32-gcc
 
 # Source files
-SRCS = EDRSilencer.c utils.c
+SRCS = EDRSilencer.c utils.c process.c
 OBJS = $(SRCS:.c=.o)
 
 # Executable name
