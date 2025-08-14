@@ -169,6 +169,7 @@ void configureNetworkFilters() {
 
 // Function to remove all rules
 void removeAllRules() {
+    EnableSeDebugPrivilege(); // Required to interact with system-level WFP objects
     HANDLE hEngine = NULL;
     DWORD result = 0;
 
