@@ -642,7 +642,7 @@ void showHelp() {
     printf("Usage: Tool.exe <command>\n");
     printf("Version: 1.5\n\n");
     printf("Commands:\n");
-    printf("  configure   - Add network rules to block traffic of all detected target processes.\n");
+     printf("  blockedr    - Add network rules to block traffic of all detected target processes.\n");
     printf("  add <path>  - Add a network rule to block traffic for a specific process.\n");
     printf("                Example: Tool.exe add \"C:\\Windows\\System32\\curl.exe\"\n");
     printf("  removeall   - Remove all network rules applied by this tool.\n");
@@ -664,7 +664,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (strcmp(argv[1], "configure") == 0) {
+    if (strcmp(argv[1], "blockedr") == 0) {
         configureNetworkFilters();
     } else if (strcmp(argv[1], "add") == 0) {
         if (argc < 3) {
