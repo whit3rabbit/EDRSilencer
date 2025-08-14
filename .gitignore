@@ -4,3 +4,6 @@ EDRSilencer.o
 EDRSilencer_debug.o
 *.bak
 *.dll
+*.pyc
+*.o
+*.bof
