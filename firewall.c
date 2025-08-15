@@ -124,12 +124,16 @@ void FirewallAddRuleByPath(const char* processPath) {
         INetFwRule* pFwRule = NULL;
         HRESULT hr = CoCreateInstance(&CLSID_NetFwRule, NULL, CLSCTX_INPROC_SERVER, &IID_INetFwRule, (void**)&pFwRule);
         if (SUCCEEDED(hr)) {
-            const char* filename = strrchr(processPath, '\\');
-            filename = filename ? filename + 1 : processPath;
-            char ruleNameAnsi[MAX_PATH];
-            StringCchPrintfA(ruleNameAnsi, MAX_PATH, "EDRSilencer Block Rule for %s", filename);
+            const char* filenameA = strrchr(processPath, '\\');
+            filenameA = filenameA ? filenameA + 1 : processPath;
 
-            BSTR bstrRuleName = AnsiToBSTR(ruleNameAnsi);
+            wchar_t filenameW[MAX_PATH];
+            MultiByteToWideChar(CP_ACP, 0, filenameA, -1, filenameW, MAX_PATH);
+
+            wchar_t ruleNameW[MAX_PATH];
+            StringCchPrintfW(ruleNameW, MAX_PATH, FIREWALL_RULE_NAME_FORMAT, filenameW);
+
+            BSTR bstrRuleName = SysAllocString(ruleNameW);
             BSTR bstrAppPath = AnsiToBSTR(processPath);
             BSTR bstrGrouping = SysAllocString(FIREWALL_RULE_GROUP);
 
@@ -278,7 +282,8 @@ void FirewallRemoveRuleByName(const char* ruleName) {
             if (SUCCEEDED(pFwRules->lpVtbl->Remove(pFwRules, bstrRuleName))) {
                 PRINTF("[+] Successfully removed firewall rule: %s\n", ruleName);
             } else {
-                EPRINTF("[-] Rule '%s' not found or could not be removed.\n", ruleName);
+                // This error is expected if the rule doesn't exist, so no need to be verbose unless debugging.
+                // EPRINTF("[-] Rule '%s' not found or could not be removed.\n", ruleName);
             }
             SysFreeString(bstrRuleName);
         }
@@ -289,9 +294,17 @@ void FirewallRemoveRuleByName(const char* ruleName) {
 }
 
 void FirewallRemoveRuleByPath(const char* processPath) {
-    const char* filename = strrchr(processPath, '\\');
-    filename = filename ? filename + 1 : processPath;
-    char ruleNameAnsi[MAX_PATH];
-    StringCchPrintfA(ruleNameAnsi, MAX_PATH, "EDRSilencer Block Rule for %s", filename);
-    FirewallRemoveRuleByName(ruleNameAnsi);
+    const char* filenameA = strrchr(processPath, '\\');
+    filenameA = filenameA ? filenameA + 1 : processPath;
+
+    wchar_t filenameW[MAX_PATH];
+    MultiByteToWideChar(CP_ACP, 0, filenameA, -1, filenameW, MAX_PATH);
+
+    wchar_t ruleNameW[MAX_PATH];
+    StringCchPrintfW(ruleNameW, MAX_PATH, FIREWALL_RULE_NAME_FORMAT, filenameW);
+
+    char ruleNameA[MAX_PATH];
+    WideCharToMultiByte(CP_ACP, 0, ruleNameW, -1, ruleNameA, MAX_PATH, NULL, NULL);
+
+    FirewallRemoveRuleByName(ruleNameA);
 }

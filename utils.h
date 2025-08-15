@@ -43,6 +43,7 @@ DEFINE_GUID(FWPM_CONDITION_ALE_REMOTE_PORT,   0x435cc29b, 0x8952, 0x471a, 0x96, 
 #define EDR_PROVIDER_NAME L"EDR Silencer Provider"
 #define EDR_SUBLAYER_NAME L"EDR Silencer SubLayer"
 #define EDR_FILTER_NAME L"EDRSilencer Generic Block Rule"
+#define FIREWALL_RULE_NAME_FORMAT L"EDRSilencer Block Rule for %s"
 
 // --- Exit Codes ---
 typedef enum ExitCode { EXIT_FAILURE_ARGS = 1, EXIT_FAILURE_PRIVS = 2, EXIT_FAILURE_WFP = 3, EXIT_FAILURE_GENERIC = 4 } ExitCode;

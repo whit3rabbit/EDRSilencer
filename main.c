@@ -95,14 +95,23 @@ int main(int argc, char *argv[]) {
             if (g_isForce) {
                 removeRulesByPath(argv[2]);
             } else {
-                char *endptr;
+                // Check if the argument is numeric.
+                char* endptr;
                 UINT64 ruleId = CustomStrToULL(argv[2], &endptr);
+
+                // If the entire string was not a valid number...
                 if (endptr == argv[2] || *endptr != '\0') {
-                    EPRINTF("[-] Invalid rule ID provided for WFP mode.\n");
-                    HeapDestroy(g_hHeap);
-                    return EXIT_FAILURE_ARGS;
+                    // ...check if it looks like a file path.
+                    if (strchr(argv[2], '\\') != NULL || strchr(argv[2], '/') != NULL) {
+                        EPRINTF("[-] Error: You provided a path for the 'remove' command in WFP mode.\n");
+                        EPRINTF("    Hint: In WFP mode, 'remove' requires a numeric Filter ID.\n");
+                        EPRINTF("    Hint: Use the 'list' command to find the ID, or use 'remove --force <path>'.\n");
+                    } else {
+                        EPRINTF("[-] Invalid rule ID provided for WFP mode. Please provide a numeric ID.\n");
+                    }
+                    return EXIT_FAILURE_ARGS; // Exit after hint
                 }
-                removeRuleById(ruleId);
+                removeRuleById(ruleId); // This is the success path
             }
         }
     } else if (lstrcmpiA(argv[1], "blockedr") == 0 || lstrcmpiA(argv[1], "add") == 0) {

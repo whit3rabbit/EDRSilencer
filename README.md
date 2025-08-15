@@ -67,6 +67,20 @@ For better operational security, it is highly recommended to change the default 
     *   `"System Telemetry Service"`
 4.  Save the file and recompile the project.
 
+#### Firewall Rule Naming
+
+Similarly, the default firewall rule name is a static indicator. You can change the format used for all firewall rules.
+
+1.  Open `utils.h`.
+2.  Locate and modify the following line:
+    ```c
+    #define FIREWALL_RULE_NAME_FORMAT L"EDRSilencer Block Rule for %s"
+    ```
+3.  Change the format to something more generic, for example:
+    *   `L"System Network Rule %s"`
+    *   `L"Microsoft Defender Rule %s"`
+4.  Save and recompile.
+
 ---
 
 ## Cobalt Strike (Reflective DLL) Usage
@@ -86,7 +100,9 @@ The included Aggressor script in the `cna_script/` directory (`EDRSilencer.cna`)
         - Example: `edr_set_mode firewall`
     *   `edr_block`: Applies block rules for all known EDRs using the currently selected mode.
     *   `edr_add C:\path\to\process.exe`: Adds a block rule for a specific process.
-    *   `edr_remove <id_or_path>`: Removes a rule. In `wfp` mode, this takes a numeric Filter ID. In `firewall` mode, this takes the full process path.
+    *   `edr_remove <id_or_path>`: Removes a rule. **Important:** The required argument depends on the mode.
+        -   In **WFP mode**, you must provide the numeric **Filter ID** of the rule to remove. You can find this ID using the `list` command.
+        -   In **Firewall mode**, you must provide the exact process path used to create the rule.
         - WFP Example: `edr_remove 1234567890`
         - Firewall Example: `edr_remove C:\Windows\System32\curl.exe`
     *   `edr_removeall`: Removes all rules created by the tool in the current mode.
@@ -114,7 +130,9 @@ Commands:
 - `blockedr`: Add network rules to block traffic of all detected target processes.
 - `add <path>`: Add a network rule to block traffic for a specific process.
   - Example: EDRSilencer.exe add "C:\Windows\System32\curl.exe"
-- `remove <id_or_path>`: Remove a network rule. In default (WFP) mode, this takes a numeric ID. In firewall mode, it takes the full process path.
+- `remove <id_or_path>`: Remove a network rule. The required argument depends on the selected mode.
+  - In **WFP mode (default)**, you must provide the numeric **Filter ID** of the rule. Use the `list` command to find the correct ID.
+  - In **Firewall mode (`--firewall`)**, you must provide the exact process path.
   - WFP Example: EDRSilencer.exe remove 1234567890
   - Firewall Example: EDRSilencer.exe --firewall remove "C:\Windows\System32\curl.exe"
 - `remove --force <path>`: (WFP Mode Only) Force remove all WFP filters for a specific process path.
