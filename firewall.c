@@ -5,8 +5,25 @@
 #include <strsafe.h>
 #include "errors.h"
 
+/*
+ * firewall.c
+ * ----------
+ * Windows Firewall (INetFwPolicy2) mode implementation. This path is an alternative to WFP mode
+ * and focuses on creating high-level block rules bound to application paths. It is less granular
+ * than WFP but does not require WFP privileges and keeps a smaller API surface.
+ *
+ * OPSEC notes:
+ * - Rules are grouped under FIREWALL_RULE_GROUP for easy discovery and cleanup.
+ * - Rule names use FIREWALL_RULE_NAME_FORMAT which is overrideable at compile time (see utils.h).
+ */
+
 // --- Helper Functions for COM and BSTR Management ---
 
+/*
+ * AnsiToBSTR
+ * ----------
+ * Minimal ANSI -> BSTR conversion helper for COM APIs. Caller must SysFreeString() the return.
+ */
 static BSTR AnsiToBSTR(const char* input) {
     if (!input) return NULL;
     int lenA = lstrlenA(input);
@@ -19,7 +36,11 @@ static BSTR AnsiToBSTR(const char* input) {
     return bstr;
 }
 
-// Encapsulates COM initialization and INetFwPolicy2 creation
+/*
+ * InitializeFirewallApi
+ * ---------------------
+ * Initializes COM and creates an INetFwPolicy2 instance. Handles the common changed-mode case.
+ */
 static HRESULT InitializeFirewallApi(INetFwPolicy2** ppFwPolicy) {
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
@@ -35,7 +56,11 @@ static HRESULT InitializeFirewallApi(INetFwPolicy2** ppFwPolicy) {
     return hr;
 }
 
-// Encapsulates COM cleanup
+/*
+ * UninitializeFirewallApi
+ * -----------------------
+ * Releases INetFwPolicy2 (if any) and uninitializes COM for the current thread.
+ */
 static void UninitializeFirewallApi(INetFwPolicy2* pFwPolicy) {
     if (pFwPolicy) {
         pFwPolicy->lpVtbl->Release(pFwPolicy);
@@ -43,7 +68,12 @@ static void UninitializeFirewallApi(INetFwPolicy2* pFwPolicy) {
     CoUninitialize();
 }
 
-// Checks if the firewall is enabled on active profiles and warns if not.
+/*
+ * CheckFirewallState
+ * ------------------
+ * Warns when the Windows Firewall is disabled for active profiles. This affects rule enforcement
+ * expectations and helps operators diagnose apparent no-ops.
+ */
 static void CheckFirewallState(INetFwPolicy2* pFwPolicy) {
     long currentProfiles = 0;
     if (FAILED(pFwPolicy->lpVtbl->get_CurrentProfileTypes(pFwPolicy, &currentProfiles))) return;
@@ -68,6 +98,12 @@ static void CheckFirewallState(INetFwPolicy2* pFwPolicy) {
     }
 }
 
+/*
+ * FirewallRuleExists
+ * ------------------
+ * Returns TRUE if a rule in our grouping already targets the specified application path.
+ * Enumerates rules via IEnumVARIANT to avoid name collisions and match on grouping + app path.
+ */
 static BOOL FirewallRuleExists(INetFwPolicy2* pFwPolicy, PCWSTR appPath) {
     BOOL exists = FALSE;
     INetFwRules* pFwRules = NULL;
@@ -108,6 +144,12 @@ static BOOL FirewallRuleExists(INetFwPolicy2* pFwPolicy, PCWSTR appPath) {
 
 // --- Public Functions ---
 
+/*
+ * FirewallAddRuleByPath
+ * ---------------------
+ * Adds an outbound block rule for the given process path, grouped under FIREWALL_RULE_GROUP.
+ * Idempotent: if a rule for the same app path already exists in our group, it is skipped.
+ */
 void FirewallAddRuleByPath(const char* processPath) {
     INetFwPolicy2* pFwPolicy = NULL;
     if (FAILED(InitializeFirewallApi(&pFwPolicy))) return;
@@ -167,6 +209,12 @@ void FirewallAddRuleByPath(const char* processPath) {
     UninitializeFirewallApi(pFwPolicy);
 }
 
+/*
+ * FirewallConfigureBlockRules
+ * ---------------------------
+ * Bulk mode: decrypts the process list, enumerates running processes, resolves full paths,
+ * and adds grouped outbound block rules per match. Prints warnings if firewall is disabled.
+ */
 void FirewallConfigureBlockRules() {
     if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
     
@@ -210,6 +258,12 @@ void FirewallConfigureBlockRules() {
     HeapFree(g_hHeap, 0, decryptedNames);
 }
 
+/*
+ * FirewallRemoveAllRules
+ * ----------------------
+ * Removes every rule created by this tool by scanning for our FIREWALL_RULE_GROUP.
+ * Safe to run repeatedly; ignores unrelated rules.
+ */
 void FirewallRemoveAllRules() {
     INetFwPolicy2* pFwPolicy = NULL;
     if (FAILED(InitializeFirewallApi(&pFwPolicy))) return;
@@ -271,6 +325,12 @@ void FirewallRemoveAllRules() {
     UninitializeFirewallApi(pFwPolicy);
 }
 
+/*
+ * FirewallRemoveRuleByName
+ * ------------------------
+ * Removes a single firewall rule by its exact display name. Primarily used by helpers that
+ * reconstruct the standard rule name format from an application path.
+ */
 void FirewallRemoveRuleByName(const char* ruleName) {
     INetFwPolicy2* pFwPolicy = NULL;
     if (FAILED(InitializeFirewallApi(&pFwPolicy))) return;
@@ -293,6 +353,12 @@ void FirewallRemoveRuleByName(const char* ruleName) {
     UninitializeFirewallApi(pFwPolicy);
 }
 
+/*
+ * FirewallRemoveRuleByPath
+ * ------------------------
+ * Computes the standard rule name from the provided process path (using filename component)
+ * and removes it via FirewallRemoveRuleByName().
+ */
 void FirewallRemoveRuleByPath(const char* processPath) {
     const char* filenameA = strrchr(processPath, '\\');
     filenameA = filenameA ? filenameA + 1 : processPath;

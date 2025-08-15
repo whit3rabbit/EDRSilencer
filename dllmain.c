@@ -1,12 +1,28 @@
 #include "core.h"
 #include "firewall.h"
 
-HANDLE g_hHeap = NULL;
-BOOL g_isQuiet = FALSE;
-CRITICAL_SECTION g_critSec; // For thread safety
-BOOL g_isFirewallMode = FALSE; // Default to WFP mode
+/*
+ * dllmain.c
+ * ---------
+ * DLL entry and exported control surface for EDRSilencer. Manages global state, threading,
+ * and dispatches to either WFP mode (core.c) or Windows Firewall mode (firewall.c).
+ *
+ * Concurrency/OPSEC notes:
+ * - All exports synchronize via a single critical section to protect shared globals.
+ * - g_isQuiet gates stdout messages; errors still print to stderr.
+ * - g_isFirewallMode selects Windows Firewall path when TRUE, WFP path otherwise.
+ */
 
-// Worker thread to apply filters
+HANDLE g_hHeap = NULL;             // Process heap for consistent allocations across modules
+BOOL g_isQuiet = FALSE;            // Suppress stdout when TRUE
+CRITICAL_SECTION g_critSec;        // Global lock for thread-safe mutations
+BOOL g_isFirewallMode = FALSE;     // Default to WFP mode
+
+/*
+ * BlockerThread
+ * -------------
+ * Background worker used by Initialize() to apply rules asynchronously and avoid blocking caller.
+ */
 DWORD WINAPI BlockerThread(LPVOID lpParam) {
     (void)lpParam; // Unused
     g_isQuiet = TRUE; // Run quietly by default
@@ -20,6 +36,11 @@ DWORD WINAPI BlockerThread(LPVOID lpParam) {
     return 0;
 }
 
+/*
+ * DllMain
+ * -------
+ * Creates/destroys a private heap and initializes the global critical section.
+ */
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     (void)hinstDLL;
     (void)lpvReserved;
@@ -41,6 +62,11 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 
 // --- Exported Functions ---
 
+/*
+ * Initialize
+ * ----------
+ * Kicks off asynchronous rule application using BlockerThread.
+ */
 __declspec(dllexport) void Initialize(void) {
     // Run the main logic in a separate thread to avoid blocking the caller
     HANDLE hThread = CreateThread(NULL, 0, BlockerThread, NULL, 0, NULL);
@@ -49,14 +75,22 @@ __declspec(dllexport) void Initialize(void) {
     }
 }
 
-// --- New Exported Function to set mode ---
+/*
+ * SetMode
+ * -------
+ * Switch between WFP mode (FALSE) and Windows Firewall mode (TRUE).
+ */
 __declspec(dllexport) void SetMode(BOOL useFirewall) {
     EnterCriticalSection(&g_critSec);
     g_isFirewallMode = useFirewall;
     LeaveCriticalSection(&g_critSec);
 }
 
-// --- Exported Functions ---
+/*
+ * BlockEDR
+ * --------
+ * Synchronous rule application. Honors quiet flag and selected mode.
+ */
 __declspec(dllexport) void BlockEDR(BOOL quiet) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
@@ -70,6 +104,29 @@ __declspec(dllexport) void BlockEDR(BOOL quiet) {
     LeaveCriticalSection(&g_critSec);
 }
 
+/*
+ * ListRules
+ * ---------
+ * Lists rules in WFP mode. In firewall mode, listing is not implemented (prints a notice).
+ */
+__declspec(dllexport) void ListRules(BOOL quiet) {
+    EnterCriticalSection(&g_critSec);
+    g_isQuiet = quiet;
+    if (CheckProcessIntegrityLevel()) {
+        if (g_isFirewallMode) {
+            PRINTF("[!] Listing rules is only implemented for WFP mode.\n");
+        } else {
+            listRules();
+        }
+    }
+    LeaveCriticalSection(&g_critSec);
+}
+
+/*
+ * AddRuleByPath
+ * -------------
+ * Adds a block rule for a specific process path in the selected mode.
+ */
 __declspec(dllexport) void AddRuleByPath(BOOL quiet, const char* processPath) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
@@ -83,6 +140,12 @@ __declspec(dllexport) void AddRuleByPath(BOOL quiet, const char* processPath) {
     LeaveCriticalSection(&g_critSec);
 }
 
+/*
+ * RemoveAllRules
+ * --------------
+ * Removes all rules created by this tool in the selected mode (provider-grouped in WFP, grouped
+ * by FIREWALL_RULE_GROUP in firewall mode).
+ */
 __declspec(dllexport) void RemoveAllRules(BOOL quiet) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
@@ -96,15 +159,21 @@ __declspec(dllexport) void RemoveAllRules(BOOL quiet) {
     LeaveCriticalSection(&g_critSec);
 }
 
+/*
+ * RemoveRuleByID
+ * --------------
+ * Dual-mode removal:
+ * - Firewall mode expects a process path, derives the rule name, and removes by name.
+ * - WFP mode expects a numeric ID string and deletes the corresponding filter.
+ */
 __declspec(dllexport) void RemoveRuleByID(BOOL quiet, const char* ruleIdOrNameStr) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
     if (ruleIdOrNameStr && CheckProcessIntegrityLevel()) {
         if (g_isFirewallMode) {
-            // In firewall mode, the string is treated as a rule name.
-            // For simplicity, we use the function that derives the name from path.
-            // A more direct approach would be removing by exact name if provided.
-            FirewallRemoveRuleByName(ruleIdOrNameStr);
+            // In firewall mode, the input is expected to be a process path.
+            // Derive the rule name from the path to match how rules are created.
+            FirewallRemoveRuleByPath(ruleIdOrNameStr);
         } else {
             // In WFP mode, the string is treated as a numeric ID.
             char *endptr;

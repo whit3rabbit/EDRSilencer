@@ -5,7 +5,9 @@
 #include <netfw.h> // For Windows Firewall COM interfaces
 
 // The group name starts with @ to hide it from the control panel UI
+#ifndef FIREWALL_RULE_GROUP
 #define FIREWALL_RULE_GROUP L"@EDRSilencer Rules"
+#endif
 
 // Public interface
 void FirewallConfigureBlockRules();

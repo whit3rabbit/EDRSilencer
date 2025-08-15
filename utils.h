@@ -11,10 +11,28 @@
 #include <psapi.h>
 #include "process.h"
 
+/*
+ * utils.h
+ * -------
+ * Common types, globals, GUIDs, and helper APIs used across EDRSilencer.
+ *
+ * Key notes:
+ * - _WIN32_WINNT 0x0601 targets Windows 7+ for WFP APIs used by this project.
+ * - Console macros honor the global quiet flag to minimize OPSEC footprint; stderr always prints.
+ * - Provider/sublayer/filter names are compile-time overrideable for OPSEC (see defines below).
+ */
+
 // --- WFP Type Forward Declarations ---
+// Some toolchains lack full forward decls for opaque WFP structs; provide minimal forward reference.
 typedef struct FWP_BYTE_BLOB_ FWP_BYTE_BLOB;
 
 // --- Extern Variables ---
+// Global runtime flags and shared resources set by the DLL entrypoints/exports.
+// g_isQuiet: suppresses stdout messages (stderr still active via EPRINTF/EWPRINTF)
+// g_isForce:  enables forced operations where applicable
+// g_isFirewallMode: toggles between WFP mode (false) and Windows Firewall mode (true)
+// g_hHeap:    process heap used for consistent allocations/free
+// XOR_KEY:    key used for simple obfuscation/deobfuscation of embedded strings
 extern BOOL g_isQuiet;
 extern BOOL g_isForce;
 extern BOOL g_isFirewallMode;
@@ -22,6 +40,8 @@ extern HANDLE g_hHeap;
 extern const char XOR_KEY;
 
 // --- MANUAL GUID DEFINITIONS (Self-Contained & Corrected) ---
+// Keep GUIDs local to avoid header dependencies and ensure consistency across builds.
+// ProviderGUID/SubLayerGUID identify our namespace in WFP; layers/conditions are standard WFP GUIDs.
 DEFINE_GUID(ProviderGUID, 0x4e27e7d4, 0x2442, 0x4891, 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55);
 DEFINE_GUID(SubLayerGUID, 0xd25b7369, 0x871b, 0x44f1, 0x82, 0x75, 0x5a, 0x30, 0xca, 0x1f, 0x5e, 0x57);
 
@@ -34,18 +54,34 @@ DEFINE_GUID(FWPM_CONDITION_ALE_IP_PROTOCOL,   0x39722b3f, 0x8a25, 0x4a59, 0x99, 
 DEFINE_GUID(FWPM_CONDITION_ALE_REMOTE_PORT,   0x435cc29b, 0x8952, 0x471a, 0x96, 0xb8, 0x74, 0xac, 0x75, 0x61, 0x01, 0x43);
 
 // --- Console Macros ---
+// PRINTF/WPRINTF write to stdout only when g_isQuiet == FALSE.
+// EPRINTF/EWPRINTF always write to stderr for error visibility irrespective of quiet mode.
 #define PRINTF(...) do { if (!g_isQuiet) { ConsoleWriteA(GetStdHandle(STD_OUTPUT_HANDLE), __VA_ARGS__); } } while (0)
 #define WPRINTF(...) do { if (!g_isQuiet) { ConsoleWriteW(GetStdHandle(STD_OUTPUT_HANDLE), __VA_ARGS__); } } while (0)
 #define EPRINTF(...) do { ConsoleWriteA(GetStdHandle(STD_ERROR_HANDLE), __VA_ARGS__); } while (0)
 #define EWPRINTF(...) do { ConsoleWriteW(GetStdHandle(STD_ERROR_HANDLE), __VA_ARGS__); } while (0)
 
-// --- Provider/Filter Name Defines ---
+// --- Provider/Filter Name Defines (overrideable for OPSEC) ---
+// Operators may override these at compile time to reduce fingerprinting.
+// Example (MinGW): -DEDR_PROVIDER_NAME=L"Windows Diagnostics Provider"
+#ifndef EDR_PROVIDER_NAME
 #define EDR_PROVIDER_NAME L"EDR Silencer Provider"
+#endif
+
+#ifndef EDR_SUBLAYER_NAME
 #define EDR_SUBLAYER_NAME L"EDR Silencer SubLayer"
+#endif
+
+#ifndef EDR_FILTER_NAME
 #define EDR_FILTER_NAME L"EDRSilencer Generic Block Rule"
-#define FIREWALL_RULE_NAME_FORMAT L"EDRSilencer Block Rule for %s"
+#endif
+
+#ifndef FIREWALL_RULE_NAME_FORMAT
+#define FIREWALL_RULE_NAME_FORMAT L"Block Rule for %s"
+#endif
 
 // --- Exit Codes ---
+// Standardized return codes for BOF/DLL invocations to simplify operator troubleshooting.
 typedef enum ExitCode { EXIT_FAILURE_ARGS = 1, EXIT_FAILURE_PRIVS = 2, EXIT_FAILURE_WFP = 3, EXIT_FAILURE_GENERIC = 4 } ExitCode;
 typedef enum {
     CUSTOM_SUCCESS = 0,
@@ -61,14 +97,21 @@ typedef enum {
 typedef CustomErrorCode ErrorCode;
 
 // --- Function Prototypes ---
+// ConsoleWriteA/W: Minimal, dependency-light console output wrappers.
 void ConsoleWriteA(HANDLE hConsole, const char* format, ...);
 void ConsoleWriteW(HANDLE hConsole, const wchar_t* format, ...);
+// getProcessFullPath: Resolve a process image full path by PID.
 BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars);
+// CheckProcessIntegrityLevel: Determine if the current process meets required integrity.
 BOOL CheckProcessIntegrityLevel();
+// EnableSeDebugPrivilege: Elevate SeDebugPrivilege for process inspection where needed.
 BOOL EnableSeDebugPrivilege();
+// CustomFwpmGetAppIdFromFileName0/FreeAppId: Obtain and free WFP AppID blobs for file paths.
 ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId);
 void FreeAppId(FWP_BYTE_BLOB* appId);
+// decryptString: Decrypt embedded strings at runtime using XOR_KEY.
 char* decryptString(struct EncryptedString encStr);
+// FilterExists: Utility to detect presence of a named filter for an AppID at a layer.
 BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* appId, const wchar_t* filterName);
 
 #endif // UTILS_H

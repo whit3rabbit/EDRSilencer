@@ -37,6 +37,16 @@ LDFLAGS_DLL = -lfwpuclnt -lole32 -loleaut32 -luuid -shared
 
 .PHONY: all release debug dll dll-debug bof clean
 
+# Stealth/OPSEC defines (wide-string literals). Adjust names to blend in.
+STEALTH_DEFINES = \
+  -DEDR_PROVIDER_NAME=L"Windows Diagnostics Provider" \
+  -DEDR_SUBLAYER_NAME=L"Network Telemetry SubLayer" \
+  -DEDR_PROVIDER_DESCRIPTION=L"Windows diagnostics components" \
+  -DEDR_SUBLAYER_DESCRIPTION=L"Telemetry flow arbitration" \
+  -DFIREWALL_RULE_GROUP=L"@Windows Diagnostics" \
+  -DFIREWALL_RULE_NAME_FORMAT=L"Block Rule for %s" \
+  -DEDR_FILTER_NAME=L"Generic Network Block Rule"
+
 # --- Main Targets ---
 
 # Default target: 'make' or 'make all' will build the release EXE
@@ -58,6 +68,16 @@ dll: $(TARGET_DLL_RELEASE) bof
 dll-debug: $(TARGET_DLL_DEBUG) bof
 	@echo "Copying debug DLL to CNA script directory..."
 	cp $(TARGET_DLL_DEBUG) $(CNA_DIR)/
+
+# --- Stealth Targets ---
+
+# 'make stealth' builds the release EXE with stealthy names/descriptions
+stealth:
+	$(MAKE) CFLAGS_RELEASE='$(CFLAGS_RELEASE) $(STEALTH_DEFINES)' release
+
+# 'make stealth-dll' builds the release DLL and BOF with stealth defines and copies DLL
+stealth-dll:
+	$(MAKE) CFLAGS_RELEASE='$(CFLAGS_RELEASE) $(STEALTH_DEFINES)' dll
 
 # 'make bof' can be run standalone to just build the BOF loader
 bof: $(BOF_LOADER_OBJ)

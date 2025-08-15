@@ -10,7 +10,7 @@ BOOL g_isFirewallMode = FALSE;
 // showHelp function is specific to the EXE
 void showHelp() {
     PRINTF("Usage: EDRSilencer.exe [--quiet | -q] [--firewall] <command>\n");
-    PRINTF("Version: 1.7\n\n");
+    PRINTF("Version: 1.8\n\n");
     PRINTF("Commands:\n");
     PRINTF("  blockedr    - Add network rules to block traffic of all detected target processes.\n");
     PRINTF("  add <path>  - Add a network rule to block traffic for a specific process.\n");
