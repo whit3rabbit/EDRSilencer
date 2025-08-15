@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "errors.h"
 #include <strsafe.h>
 
 const char XOR_KEY = 0x42;
@@ -43,39 +44,39 @@ BOOL CheckProcessIntegrityLevel() {
 
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-            EPRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
+            PrintDetailedError("OpenThreadToken failed", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
-            EPRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
+            PrintDetailedError("OpenProcessToken failed", GetLastError());
             return FALSE;
         }
     }
 
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, NULL, 0, &dwLength) && 
         GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-        EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
+        PrintDetailedError("GetTokenInformation failed", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
     pTIL = (PTOKEN_MANDATORY_LABEL)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, dwLength);
     if (pTIL == NULL) {
-        EPRINTF("[-] HeapAlloc failed with error code: 0x%lX.\n", GetLastError());
+        PrintDetailedError("HeapAlloc failed", GetLastError());
         CloseHandle(hToken);
         return FALSE;
     }
 
     if (!GetTokenInformation(hToken, TokenIntegrityLevel, pTIL, dwLength, &dwLength)) {
-        EPRINTF("[-] GetTokenInformation failed with error code: 0x%lX.\n", GetLastError());
+        PrintDetailedError("GetTokenInformation failed", GetLastError());
         HeapFree(g_hHeap, 0, pTIL);
         CloseHandle(hToken);
         return FALSE;
     }
 
     if (pTIL->Label.Sid == NULL || *GetSidSubAuthorityCount(pTIL->Label.Sid) < 1) {
-        EPRINTF("[-] SID structure is invalid.\n");
+        PrintDetailedError("SID structure is invalid", GetLastError());
         HeapFree(g_hHeap, 0, pTIL);
         CloseHandle(hToken);
         return FALSE;
@@ -86,7 +87,7 @@ BOOL CheckProcessIntegrityLevel() {
     if (dwIntegrityLevel >= SECURITY_MANDATORY_HIGH_RID) {
         isHighIntegrity = TRUE;
     } else {
-        EPRINTF("[-] This program requires to run in high integrity level.\n");
+        PrintDetailedError("This program requires to run in high integrity level", GetLastError());
     }
 
     HeapFree(g_hHeap, 0, pTIL);
@@ -100,18 +101,18 @@ BOOL EnableSeDebugPrivilege() {
 	
     if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, TRUE, &hToken)) {
         if (GetLastError() != ERROR_NO_TOKEN) {
-            EPRINTF("[-] OpenThreadToken failed with error code: 0x%lX.\n", GetLastError());
+            PrintDetailedError("OpenThreadToken failed", GetLastError());
             return FALSE;
         }
 
         if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &hToken)) {
-            EPRINTF("[-] OpenProcessToken failed with error code: 0x%lX.\n", GetLastError());
+            PrintDetailedError("OpenProcessToken failed", GetLastError());
             return FALSE;
         }
     }
 
 	if (!LookupPrivilegeValueA(NULL, "SeDebugPrivilege", &tokenPrivileges.Privileges[0].Luid)){
-        EPRINTF("[-] LookupPrivilegeValueA failed with error code: 0x%lX.\n", GetLastError());
+        PrintDetailedError("LookupPrivilegeValueA failed", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
@@ -120,13 +121,13 @@ BOOL EnableSeDebugPrivilege() {
 	tokenPrivileges.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
 	if (!AdjustTokenPrivileges(hToken, FALSE, &tokenPrivileges, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) {
-        EPRINTF("[-] AdjustTokenPrivileges failed with error code: 0x%lX.\n", GetLastError());
+        PrintDetailedError("AdjustTokenPrivileges failed", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
 	}
 
     if (GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
-        EPRINTF("[-] Failed to get SeDebugPrivilege. You might not be able to get the process handle of the EDR process.\n");
+        PrintDetailedError("Failed to get SeDebugPrivilege", GetLastError());
 		CloseHandle(hToken);
 		return FALSE;
     }
@@ -139,7 +140,7 @@ void CharArrayToWCharArray(const char charArray[], WCHAR wCharArray[], size_t wC
     int result = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, wCharArray, wCharArraySize);
 
     if (result == 0) {
-        EPRINTF("[-] MultiByteToWideChar failed with error code: 0x%lX.\n", GetLastError());
+        PrintDetailedError("MultiByteToWideChar failed", GetLastError());
         wCharArray[0] = L'\0';
     }
 }
@@ -178,8 +179,8 @@ ErrorCode ConvertToNtPath(PCWSTR filePath, wchar_t* ntPathBuffer, size_t bufferS
     if (FAILED(hr)) {
         return CUSTOM_STRING_FORMATTING_ERROR;
     }
-    
 
+    CharLowerW(ntPathBuffer);
     return CUSTOM_SUCCESS;
 }
 
@@ -267,4 +268,34 @@ char* decryptString(struct EncryptedString encStr) {
     decrypted[encStr.size] = '\0';
 
     return decrypted;
+}
+
+BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* appId) {
+    BOOL exists = FALSE;
+    HANDLE enumHandle = NULL;
+    FWPM_FILTER0** filters = NULL;
+    UINT32 numEntries = 0;
+
+    FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
+    enumTemplate.layerKey = *layerKey;
+    enumTemplate.providerKey = (GUID*)&ProviderGUID; // Check only for filters from our provider
+    enumTemplate.numFilterConditions = 1;
+    
+    FWPM_FILTER_CONDITION0 condition = {0};
+    condition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
+    condition.matchType = FWP_MATCH_EQUAL;
+    condition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
+    condition.conditionValue.byteBlob = (FWP_BYTE_BLOB*)appId;
+    enumTemplate.filterCondition = &condition;
+
+    if (FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle) == ERROR_SUCCESS) {
+        if (FwpmFilterEnum0(hEngine, enumHandle, 1, &filters, &numEntries) == ERROR_SUCCESS) {
+            if (numEntries > 0) {
+                exists = TRUE; // We found at least one matching filter
+            }
+            FwpmFreeMemory0((void**)&filters);
+        }
+        FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
+    }
+    return exists;
 }

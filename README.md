@@ -92,11 +92,17 @@ Commands:
 - `blockedr`: Add network rules to block traffic of all detected target processes.
 - `add <path>`: Add a network rule to block traffic for a specific process.
   - Example: EDRSilencer.exe add "C:\Windows\System32\curl.exe"
-- `removeall`: Remove all network rules applied by this tool.
-- `remove <id>`: Remove a specific network rule by its ID.
+- `remove <id>`: Remove a network rule by its ID.
+  - Example: EDRSilencer.exe remove 1234567890
+- `remove --force <path>`: Force remove all WFP filters for a specific process path.
+  - Example: EDRSilencer.exe remove --force "C:\Windows\System32\curl.exe"
+- `removeall --force`: Force remove all WFP filters, sublayer, and provider.
+- `list`: List all network rules applied by this tool.
 
 Options:
-- `-q`, `--quiet`: Suppress all console output.
+- `--force`: Used with 'remove' or 'removeall' for aggressive cleanup.
+- `--quiet, -q`: Suppress output messages.
+- `help, -h`: Show this help message.
 ```
 
 ### DLL Usage

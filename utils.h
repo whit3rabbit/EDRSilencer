@@ -1,14 +1,18 @@
 #include <winsock2.h>
 #include <windows.h>
-#include <initguid.h>
 #include <fwpmu.h>
 #include <tlhelp32.h>
 #include <psapi.h>
 #include "process.h" // For EncryptedString struct
 
 extern BOOL g_isQuiet;
+extern BOOL g_isForce;
 extern HANDLE g_hHeap; // Global handle for our private heap
 extern const char XOR_KEY;
+
+// Define custom GUIDs used by the application
+DEFINE_GUID(ProviderGUID, 0x4e27e7d4, 0x2442, 0x4891, 0x91, 0x2e, 0x42, 0x5, 0x42, 0x8a, 0x85, 0x55);
+DEFINE_GUID(SubLayerGUID, 0xd25b7369, 0x871b, 0x44f1, 0x82, 0x75, 0x5a, 0x30, 0xca, 0x1f, 0x5e, 0x57);
 
 // Custom console writing function prototypes
 void ConsoleWriteA(HANDLE hConsole, const char* format, ...);
@@ -83,6 +87,7 @@ typedef enum ErrorCode {
 
 #define FWPM_FILTER_FLAG_PERSISTENT (0x00000001)
 #define FWPM_PROVIDER_FLAG_PERSISTENT (0x00000001)
+#define FWPM_SUBLAYER_FLAG_PERSISTENT (0x00000001)
 BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars);
 BOOL CheckProcessIntegrityLevel();
 BOOL EnableSeDebugPrivilege();
@@ -93,3 +98,4 @@ BOOL FileExists(PCWSTR filePath);
 ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId);
 void FreeAppId(FWP_BYTE_BLOB* appId);
 char* decryptString(struct EncryptedString encStr);
+BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* appId);

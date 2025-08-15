@@ -6,7 +6,7 @@ CC = x86_64-w64-mingw32-gcc
 CNA_DIR = cna_script/EDRSilencer
 
 # Common source files used by both EXE and DLL
-COMMON_SRCS = core.c utils.c process.c
+COMMON_SRCS = core.c utils.c process.c errors.c
 # Entry-point source for the Executable
 EXE_SRC = main.c
 # Entry-point source for the DLL

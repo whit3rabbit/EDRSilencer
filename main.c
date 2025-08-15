@@ -1,38 +1,46 @@
 #include "core.h"
+#include "errors.h"
 
 HANDLE g_hHeap = NULL;
 BOOL g_isQuiet = FALSE;
+BOOL g_isForce = FALSE;
 
 // showHelp function is specific to the EXE
 void showHelp() {
     PRINTF("Usage: EDRSilencer.exe [--quiet | -q] <command>\n");
-    PRINTF("Version: 1.5\n\n");
+    PRINTF("Version: 1.6\n\n");
     PRINTF("Commands:\n");
     PRINTF("  blockedr    - Add network rules to block traffic of all detected target processes.\n");
     PRINTF("  add <path>  - Add a network rule to block traffic for a specific process.\n");
     PRINTF("                Example: EDRSilencer.exe add \"C:\\Windows\\System32\\curl.exe\"\n");
-    PRINTF("  removeall   - Remove all network rules applied by this tool.\n");
-    PRINTF("  remove <id> - Remove a specific network rule by its ID.\n");
+    PRINTF("  remove <id> - Remove a network rule by its ID.\n");
+    PRINTF("                Example: EDRSilencer.exe remove 1234567890\n");
+    PRINTF("  remove --force <path> - Force remove all WFP filters for a specific process path.\n");
+    PRINTF("                Example: EDRSilencer.exe remove --force \"C:\\Windows\\System32\\curl.exe\"\n");
+    PRINTF("  removeall --force - Force remove all WFP filters, sublayer, and provider.\n");
+    PRINTF("  list        - List all network rules applied by this tool.\n");
     PRINTF("\nOptions:\n");
-    PRINTF("  -q, --quiet - Suppress all console output.\n");
+    PRINTF("  --force     - Used with 'remove' or 'removeall' for aggressive cleanup.\n");
+    PRINTF("  --quiet, -q - Suppress output messages.\n");
+    PRINTF("  help, -h    - Show this help message.\n");
 }
 
 int main(int argc, char *argv[]) {
     g_hHeap = HeapCreate(0, 0, 0);
     if (g_hHeap == NULL) {
-        HANDLE hStdErr = GetStdHandle(STD_ERROR_HANDLE);
-        const char* msg = "[-] Critical error: Failed to create private heap.\n";
-        DWORD written;
-        WriteFile(hStdErr, msg, lstrlenA(msg), &written, NULL);
+        PrintDetailedError("Critical error: Failed to create private heap", GetLastError());
         return EXIT_FAILURE_GENERIC;
     }
 
     for (int i = 1; i < argc; i++) {
         if (lstrcmpiA(argv[i], "--quiet") == 0 || lstrcmpiA(argv[i], "-q") == 0) {
             g_isQuiet = TRUE;
-            for (int j = i; j < argc - 1; j++) {
-                argv[j] = argv[j + 1];
-            }
+            for (int j = i; j < argc - 1; j++) { argv[j] = argv[j + 1]; }
+            argc--;
+            i--;
+        } else if (lstrcmpiA(argv[i], "--force") == 0) {
+            g_isForce = TRUE;
+            for (int j = i; j < argc - 1; j++) { argv[j] = argv[j + 1]; }
             argc--;
             i--;
         }
@@ -54,31 +62,43 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE_PRIVS;
     }
 
-    if (lstrcmpiA(argv[1], "blockedr") == 0) {
-        configureNetworkFilters();
-    } else if (lstrcmpiA(argv[1], "add") == 0) {
-        if (argc < 3) {
-            EPRINTF("[-] Missing argument. Please provide the full path of the process.\n");
-            HeapDestroy(g_hHeap);
-            return EXIT_FAILURE_ARGS;
-        }
-        addProcessRule(argv[2]);
-    } else if (lstrcmpiA(argv[1], "removeall") == 0) {
+    if (lstrcmpiA(argv[1], "removeall") == 0) {
         removeAllRules();
     } else if (lstrcmpiA(argv[1], "remove") == 0) {
         if (argc < 3) {
-            EPRINTF("[-] Missing argument. Please provide the rule ID.\n");
+            EPRINTF("[-] Missing argument. Provide a rule ID or use --force with a process path.\n");
             HeapDestroy(g_hHeap);
             return EXIT_FAILURE_ARGS;
         }
-        char *endptr;
-        UINT64 ruleId = CustomStrToULL(argv[2], &endptr);
-        if (endptr == argv[2]) { // No digits were read
-            EPRINTF("[-] Invalid rule ID provided.\n");
+
+        if (g_isForce) {
+            removeRulesByPath(argv[2]);
+        } else {
+            char *endptr;
+            UINT64 ruleId = CustomStrToULL(argv[2], &endptr);
+            if (endptr == argv[2] || *endptr != '\0') { 
+                EPRINTF("[-] Invalid rule ID provided.\n");
+                HeapDestroy(g_hHeap);
+                return EXIT_FAILURE_ARGS;
+            }
+            removeRuleById(ruleId);
+        }
+    } else if (lstrcmpiA(argv[1], "blockedr") == 0 || lstrcmpiA(argv[1], "add") == 0) {
+        if (g_isForce) {
+            EPRINTF("[-] The --force flag is not applicable to 'blockedr' or 'add' commands.\n");
             HeapDestroy(g_hHeap);
             return EXIT_FAILURE_ARGS;
         }
-        removeRuleById(ruleId);
+        if (lstrcmpiA(argv[1], "blockedr") == 0) {
+            configureNetworkFilters();
+        } else { // "add"
+            if (argc < 3) {
+                EPRINTF("[-] Missing argument. Please provide the full path of the process.\n");
+                HeapDestroy(g_hHeap);
+                return EXIT_FAILURE_ARGS;
+            }
+            addProcessRule(argv[2]);
+        }
     } else {
         EPRINTF("[-] Invalid command: \"%s\". Use -h for help.\n", argv[1]);
         HeapDestroy(g_hHeap);

@@ -4,7 +4,7 @@
 #define PROCESSES_H
 
 #include <stddef.h> // Required for size_t
-#include <windows.h> // Required for BOOL
+ 
 
 // The struct definition is needed here so any file including this header
 // knows what 'struct EncryptedString' is.
@@ -21,7 +21,6 @@ extern struct EncryptedString processData[];
 // will not work on an external array declaration.
 extern const size_t PROCESS_DATA_COUNT;
 
-// Function to decrypt an encrypted string
-char* decryptString(struct EncryptedString encStr);
+ 
 
 #endif // PROCESSES_H
