@@ -373,57 +373,35 @@ The following is a comprehensive list of all EDR-related process names targeted 
 
 | Process Name | Process Name | Process Name |
 | --- | --- | --- |
-| 360LeakRepair.exe | SentinelStaticEnginePatcher.exe | mc-mp-host.exe |
-| 360NetRepair.exe | SentinelStaticEngineScanner.exe | mc-neo-a-host.exe |
-| 360Netman.exe | SentinelUI.exe | mc-neo-host.exe |
-| 360SPTool.exe | SuperKiller.exe | mc-neo-w-host.exe |
-| 360Toasts.exe | Symantec Antivirus.exe | mcafee diagnose scan.exe |
-| 360UDisk.exe | Symantec Endpoint Protection.exe | mcafee.exe |
-| 360WD.exe | Symantec.exe | mccep.exe |
-| 360WebDeff.exe | SymantecAgent.exe | mccepbrw.exe |
-| 360ain.exe | SymantecUI.exe | mcinst.exe |
-| 360dump.exe | WDSafeDown.exe | mclogs.exe |
-| 360insthelper.exe | WscControl.exe | mcnetcfg.exe |
-| 360leakfix.exe | ZhuDongFangYu.exe | mcnetman.exe |
-| 360rp.exe | avast.exe | mcrepair.exe |
-| 360safe.exe | avg.exe | mcsafe.exe |
-| 360safetray.exe | bitdefender.exe | mcscan.exe |
-| 360sd.exe | carbonblack.exe | mcsclog.exe |
-| 360sdrun.exe | cb.exe | mcscreencapture.exe |
-| 360sdtooldata.exe | cban.exe | mcshell.exe |
-| 360sdup.exe | cbcloud.exe | mcshield.exe |
-| 360sec.exe | cbcomms.exe | mcsync.exe |
-| 360secext.exe | cbdaemon.exe | mctp.exe |
-| 360taskmgr.exe | cbpsc.exe | mcuicnt.exe |
-| 4m.exe | cbsensor.exe | mcuihost.exe |
-| CbDefense-Audit.exe | cbt.exe | mcupd.exe |
-| CbDefense-Recorder.exe | crowdstrike.exe | mcvs.exe |
-| CbDefense-Sensor.exe | csagent.exe | mcvsscn.exe |
-| CbDefense-Service.exe | csconnector.exe | mfeamcin.exe |
-| CbDefense-UI.exe | csfalcon.exe | mfeann.exe |
-| CbDefense.exe | csfalconservice.exe | mfeaps.exe |
-| HealthService.exe | cylance.exe | mfeavsvc.exe |
-| LogProcessorService.exe | eadr.exe | mfecanary.exe |
-| MonitoringHost.exe | eamsi.exe | mfeelam.exe |
-| MpCmdRun.exe | edpa.exe | mfeens.exe |
-| MsMpEng.exe | ehurukai.exe | mfeesp.exe |
-| MsSense.exe | ekrn.exe | mfefire.exe |
-| QualysAgent.exe | elastic-agent.exe | mfehcs.exe |
-| RepCLI.exe | elastic-endpoint.exe | mfehidin.exe |
-| RepSvc.exe | endgame.exe | mfemms.exe |
-| RepUtils.exe | epp.exe | mfeskin.gr.exe |
-| RepUx.exe | eppconsole.exe | mfetp.exe |
-| SenseCncProxy.exe | eppremediate.exe | norton.exe |
-| SenseIR.exe | eppservice.exe | panda.exe |
-| SenseNdr.exe | esensor.exe | repair.exe |
-| SenseSampleUploader.exe | eset.exe | soft.gr.exe |
-| SentinelAgent.exe | f-secure.exe | softup.notify.exe |
-| SentinelAgentWorker.exe | filebeat.exe | sophos.exe |
-| SentinelBrowserNativeHost.exe | hips4ray.exe | trend micro.exe |
-| SentinelHelperService.exe | hipsdaemon.exe | wdp.exe |
-| SentinelRemediation.exe | hwsd.exe | webroot.exe |
-| SentinelRemoteShell.exe | kaspersky.exe | winlogbeat.exe |
-| SentinelRemoteShellHost.exe | mc fab.exe | wsctrlsvc.exe |
-| SentinelScanFromContextMenu.exe | mc feedback.exe | xagt.exe |
-| SentinelServiceHost.exe | mc-fw-host.exe | zhongshenlong.exe |
-| SentinelStaticEngine.exe | mc-inst-ui.exe |
+| 360ain.exe | 360dump.exe | 360insthelper.exe |
+| 360LeakRepair.exe | 360leakfix.exe | 360Netman.exe |
+| 360NetRepair.exe | 360rp.exe | 360safe.exe |
+| 360safetray.exe | 360sd.exe | 360sdrun.exe |
+| 360sdtooldata.exe | 360sdup.exe | 360sec.exe |
+| 360secext.exe | 360SPTool.exe | 360taskmgr.exe |
+| 360Toasts.exe | 360UDisk.exe | ZhuDongFangYu.exe |
+| softup.notify.exe | SoftMgr.exe | filebeat.exe |
+| winlogbeat.exe | AvastSvc.exe | AvastUI.exe |
+| avgsvc.exe | avgui.exe | avgwdsvc.exe |
+| vsserv.exe | bdservicehost.exe | avp.exe |
+| kvrt.exe | CSFalconService.exe | CylanceSvc.exe |
+| BlackBerryProtect.exe | SAVService.exe | SAVAdminService.exe |
+| SophosUI.exe | SophosFS.exe | ccSvcHst.exe |
+| NortonSecurity.exe | mcshield.exe | mfecanary.exe |
+| mfeann.exe | mfeelam.exe | mfeens.exe |
+| mfeesp.exe | mfefire.exe | mfehcs.exe |
+| mfehidin.exe | mfetp.exe | ekrn.exe |
+| egui.exe | mbamservice.exe | WRSA.exe |
+| PSANHost.exe | fsavgui.exe | fshoster32.exe |
+| PccNTMon.exe | Ntrtscan.exe | TmListen.exe |
+| SentinelAgent.exe | SentinelAgentWorker.exe | SentinelBrowserNativeHost.exe |
+| SentinelHelperService.exe | SentinelMemoryScanner.exe | SentinelRemediation.exe |
+| SentinelRemoteShell.exe | SentinelRemoteShellHost.exe | SentinelScanFromContextMenu.exe |
+| SentinelServiceHost.exe | SentinelStaticEngine.exe | SentinelStaticEnginePatcher.exe |
+| SentinelStaticEngineScanner.exe | SentinelUI.exe | MsMpEng.exe |
+| MpCmdRun.exe | MsSense.exe | SenseCncProxy.exe |
+| SenseIR.exe | SenseNdr.exe | SenseSampleUploader.exe |
+| elastic-agent.exe | elastic-endpoint.exe | endgame.exe |
+| esensor.exe | hurukai.exe | hipstray.exe |
+| HealthService.exe | MonitoringHost.exe | hwsd.exe |
+| xagt.exe |  |  |

@@ -20,7 +20,7 @@ static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath);
  * - For each match, resolves its full path and applies two hard-block filters (IPv4 and IPv6).
  *
  * Priority rationale:
- * - Our sublayer weight is set to the maximum (0xFFFFFFFF) so arbitration prefers our sublayer first.
+ * - Our sublayer weight is set to the maximum (0xFFFF, UINT16) so arbitration prefers our sublayer first.
  * - Each filter uses FWP_UINT64 weight of (UINT64)-1, so within our sublayer our rules dominate.
  */
 void configureNetworkFilters() {
@@ -183,7 +183,7 @@ static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerG
  * ----------------------
  * Idempotently creates the provider and a high-priority sublayer.
  * - Provider is marked persistent so rules survive until explicitly removed.
- * - Sublayer weight is set to 0xFFFFFFFF (max UINT32) to win sublayer ordering during arbitration.
+ * - Sublayer weight is set to 0xFFFF (max UINT16) to win sublayer ordering during arbitration.
  */
 static DWORD AddProviderAndSubLayer(HANDLE hEngine) {
     DWORD result = FwpmTransactionBegin0(hEngine, 0);
