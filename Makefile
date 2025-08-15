@@ -29,6 +29,11 @@ BOF_LOADER_OBJ = $(CNA_DIR)/bof_loader.x64.o
 # Common flags for C compilation
 CFLAGS = -Wall -Wextra
 CFLAGS_RELEASE = $(CFLAGS) -O2 -D_WIN32_WINNT=0x0601
+
+# Conditionally add stealth flags if STEALTH_BUILD is set
+ifeq ($(STEALTH_BUILD),1)
+CFLAGS_RELEASE += $(STEALTH_DEFINES)
+endif
 CFLAGS_DEBUG = $(CFLAGS) -g -D_WIN32_WINNT=0x0601
 # Linker flags for building an EXE
 LDFLAGS_EXE = -lfwpuclnt -lole32 -loleaut32 -luuid
@@ -73,11 +78,11 @@ dll-debug: $(TARGET_DLL_DEBUG) bof
 
 # 'make stealth' builds the release EXE with stealthy names/descriptions
 stealth:
-	$(MAKE) CFLAGS_RELEASE='$(CFLAGS_RELEASE) $(STEALTH_DEFINES)' release
+	$(MAKE) release STEALTH_BUILD=1
 
 # 'make stealth-dll' builds the release DLL and BOF with stealth defines and copies DLL
 stealth-dll:
-	$(MAKE) CFLAGS_RELEASE='$(CFLAGS_RELEASE) $(STEALTH_DEFINES)' dll
+	$(MAKE) dll STEALTH_BUILD=1
 
 # 'make bof' can be run standalone to just build the BOF loader
 bof: $(BOF_LOADER_OBJ)
