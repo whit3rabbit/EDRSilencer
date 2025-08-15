@@ -24,7 +24,11 @@ These commands are for cleanup.
 
 ### Part 2: The Core Mechanism: How It Blocks Communication
 
-The tool blocks network communication by leveraging the **Windows Filtering Platform (WFP)**, a powerful framework for interacting with the Windows networking stack. The mechanism creates a simple but effective "stealth" block that prevents all outbound connections for the target application.
+The tool offers two distinct modes to block network communication. The default mode uses the **Windows Filtering Platform (WFP)**, a low-level and powerful framework. The alternative mode uses the higher-level **Windows Firewall COM API**, which offers different trade-offs in terms of stealth and system integration.
+
+### Mechanism A: Windows Filtering Platform (Default Mode)
+
+The WFP mode creates a simple but effective "stealth" block that prevents all outbound connections for the target application.
 
 Here’s the specific mechanism:
 
@@ -51,9 +55,34 @@ Here’s the specific mechanism:
 
 ---
 
+### Mechanism B: Windows Firewall (Alternative Mode)
+
+This mode uses the standard Windows Firewall COM interfaces (`INetFwPolicy2`) to achieve the same goal. This method is less stealthy from a technical perspective but may blend in better with normal administrative activity.
+
+1.  **Initialize COM:** The program initializes the Component Object Model (COM) library by calling `CoInitializeEx`.
+2.  **Instantiate Firewall Policy:** It creates an instance of the `INetFwPolicy2` object, which is the primary interface for managing the firewall.
+3.  **Create a New Rule Object:** For each target EDR process, it creates a new `INetFwRule` object.
+4.  **Configure the Rule:** The rule is configured with the following properties:
+    *   **Name:** A descriptive name (e.g., `Block-MsSense.exe`).
+    *   **Application Name:** The full path to the EDR executable.
+    *   **Action:** `NET_FW_ACTION_BLOCK`.
+    *   **Direction:** `NET_FW_RULE_DIR_OUT` (outbound traffic).
+    *   **Grouping:** All rules are assigned to a group named `EDR Silencer Rules` for easy identification and cleanup.
+    *   **Profiles:** The rule applies to all network profiles (Domain, Private, Public).
+5.  **Add the Rule:** The configured rule is added to the system's firewall policy.
+6.  **Cleanup:** All COM objects are released.
+
+When `removeall` is used in this mode, the tool enumerates all rules belonging to its group (`EDR Silencer Rules`) and removes them one by one.
+
+---
+
 ### Part 3: Forensic Footprints: Logs and Artifacts Left Behind
 
-A prepared defender can identify the tool's activity. Assuming default security auditing is enabled, the tool generates high-confidence evidence in the **Windows Security Event Log**.
+A prepared defender can identify the tool's activity. The artifacts differ significantly depending on the mode used.
+
+#### WFP Mode Artifacts
+
+Assuming default security auditing is enabled, the WFP mode generates high-confidence evidence in the **Windows Security Event Log**.
 
 #### High-Confidence Logs (Direct Evidence)
 
@@ -72,6 +101,14 @@ A prepared defender can identify the tool's activity. Assuming default security 
 *   **Process Execution:** The execution of `EDRSilencer.exe` with its command-line arguments can be logged by security tools that are not yet silenced or by tools like Sysmon.
 *   **Low CPU Profile:** Due to the optimized "decrypt-once" logic, the `blockedr` command runs very quickly and avoids causing a noticeable CPU spike, making it less likely to be flagged by performance-based monitoring tools.
 *   **Loss of Agent Telemetry:** This is the most critical operational indicator for a security operations center (SOC). On their central dashboard, they will observe that one or more endpoint agents have suddenly stopped sending heartbeat signals and telemetry. This is a high-priority alert that guarantees an investigation.
+
+#### Windows Firewall Mode Artifacts
+
+This mode generates different, more conventional artifacts.
+
+*   **GUI Visibility:** The rules are **directly visible** to anyone who opens the "Windows Defender Firewall with Advanced Security" management console (wf.msc). They will appear as outbound block rules under the group "EDR Silencer Rules".
+*   **Event ID 4946/4947 (Security Log):** When a rule is added or modified, the system may log Event ID 4946 ("A change has been made to the Windows Firewall exception list. A rule was added.") or 4947 ("A rule was modified."). These logs are less detailed than their WFP counterparts but clearly indicate firewall manipulation.
+*   **Registry Keys:** Firewall rules are stored in the registry under `HKLM\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules`. An analyst can find the block rules here, where the rule name and properties are stored as values.
 
 ---
 

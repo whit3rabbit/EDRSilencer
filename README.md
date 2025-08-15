@@ -1,9 +1,27 @@
 # EDRSilencer
-Inspired by the closed source FireBlock tool [FireBlock](https://www.mdsec.co.uk/2023/09/nighthawk-0-2-6-three-wise-monkeys/) from MdSec NightHawk, I decided to create my own version and this tool was created with the aim of blocking the outbound traffic of running EDR processes using Windows Filtering Platform (WFP) APIs.
+Inspired by the closed source FireBlock tool [FireBlock](https://www.mdsec.co.uk/2023/09/nighthawk-0-2-6-three-wise-monkeys/) from MdSec NightHawk, I decided to create my own version and this tool was created with the aim of blocking the outbound traffic of running EDR processes. It supports two distinct operational modes: Windows Filtering Platform (WFP) and Windows Firewall.
 
 The tool identifies EDR processes by comparing running processes against a list of known EDR executable names. To bypass potential EDR controls that prevent opening handles to their own processes (`CreateFileW`), `EDRSilencer` uses a custom method to get the application ID required for WFP rules without needing a file handle.
 
 **Disclaimer:** This tool is intended for authorized red team operations and security research. As I do not have access to all EDRs for testing, the included process list may not be exhaustive. Contributions and corrections are welcome.
+
+---
+
+## Operational Modes
+
+EDRSilencer can operate in two modes, offering different trade-offs in terms of stealth, system integration, and forensic artifacts.
+
+### 1. Windows Filtering Platform (WFP) Mode (Default)
+
+-   **Mechanism:** Uses low-level WFP APIs to create kernel-mode filters that block network traffic.
+-   **Pros:** Highly effective and difficult to bypass. Can be more stealthy as it doesn't create visible artifacts in the Windows Firewall GUI.
+-   **Cons:** WFP activity can be monitored by sophisticated EDRs. The created provider and filters, if not named carefully, can be a forensic indicator.
+
+### 2. Windows Firewall Mode
+
+-   **Mechanism:** Uses the standard Windows Firewall COM API (`INetFwPolicy2`) to add rules.
+-   **Pros:** Blends in with legitimate system activity, as creating firewall rules is a common administrative task. Less likely to be flagged as suspicious by EDRs.
+-   **Cons:** Rules are visible in the Windows Defender Firewall GUI (though placed in a hidden group by default). May be less resilient against tampering by an EDR with sufficient privileges.
 
 ---
 
@@ -64,20 +82,24 @@ The included Aggressor script in the `cna_script/` directory (`EDRSilencer.cna`)
 1.  **Build the Module:** Run `make dll` from the project root. This will compile `EDRSilencer.dll`, `bof_loader.x64.o`, and place the DLL in the correct directory (`cna_script/EDRSilencer/`).
 2.  **Load the Script:** In Cobalt Strike, go to `Scripting -> Load` and select the `cna_script/EDRSilencer.cna` file.
 3.  **Execute Commands:** You can now use the following commands in any Beacon console:
-    *   `edr_initialize`: Reflectively loads the DLL and calls the `Initialize()` function, which runs the main `blockedr` logic in a separate thread. This is the recommended "fire-and-forget" method.
-    *   `edr_block`: Manually triggers the blocking of all known EDR processes.
+    *   `edr_set_mode <wfp|firewall>`: Sets the operational mode for all subsequent commands. The default is `wfp`.
+        - Example: `edr_set_mode firewall`
+    *   `edr_block`: Applies block rules for all known EDRs using the currently selected mode.
     *   `edr_add C:\path\to\process.exe`: Adds a block rule for a specific process.
-    *   `edr_removeall`: Removes all filtering rules created by the tool.
-    *   `edr_remove_id <FilterID>`: Removes a specific rule by its ID.
+    *   `edr_remove <id_or_path>`: Removes a rule. In `wfp` mode, this takes a numeric Filter ID. In `firewall` mode, this takes the full process path.
+        - WFP Example: `edr_remove 1234567890`
+        - Firewall Example: `edr_remove C:\Windows\System32\curl.exe`
+    *   `edr_removeall`: Removes all rules created by the tool in the current mode.
 
 ### Exported Functions
 
 For advanced use or integration with other C2 frameworks, the DLL exports the following functions:
--   `Initialize(void)`: **(Recommended)** Call this first. It runs the main EDR blocking logic in a new thread. Operates silently by default.
--   `BlockEDR(BOOL quiet)`: Manually triggers the blocking logic.
+-   `SetMode(BOOL useFirewall)`: Sets the operational mode. `TRUE` for Firewall mode, `FALSE` for WFP mode.
+-   `Initialize(void)`: **(Deprecated)** Runs the main EDR blocking logic in a new thread using the default WFP mode.
+-   `BlockEDR(BOOL quiet)`: Manually triggers the blocking logic in the currently selected mode.
 -   `AddRuleByPath(BOOL quiet, const char* processPath)`: Adds a rule for a specific process.
 -   `RemoveAllRules(BOOL quiet)`: Removes all rules.
--   `RemoveRuleByID(BOOL quiet, const char* ruleIdStr)`: Removes a rule by ID.
+-   `RemoveRuleByID(BOOL quiet, const char* ruleIdOrNameStr)`: Removes a rule. The second argument is treated as a numeric ID string in WFP mode and a process path in Firewall mode.
 
 ---
 
@@ -86,21 +108,23 @@ For advanced use or integration with other C2 frameworks, the DLL exports the fo
 The tool can also be compiled as a standalone executable for testing or direct execution.
 
 ```
-Usage: EDRSilencer.exe [--quiet | -q] <command>
+Usage: EDRSilencer.exe [--quiet | -q] [--firewall] <command>
 
 Commands:
 - `blockedr`: Add network rules to block traffic of all detected target processes.
 - `add <path>`: Add a network rule to block traffic for a specific process.
   - Example: EDRSilencer.exe add "C:\Windows\System32\curl.exe"
-- `remove <id>`: Remove a network rule by its ID.
-  - Example: EDRSilencer.exe remove 1234567890
-- `remove --force <path>`: Force remove all WFP filters for a specific process path.
-  - Example: EDRSilencer.exe remove --force "C:\Windows\System32\curl.exe"
-- `removeall --force`: Force remove all WFP filters, sublayer, and provider.
+- `remove <id_or_path>`: Remove a network rule. In default (WFP) mode, this takes a numeric ID. In firewall mode, it takes the full process path.
+  - WFP Example: EDRSilencer.exe remove 1234567890
+  - Firewall Example: EDRSilencer.exe --firewall remove "C:\Windows\System32\curl.exe"
+- `remove --force <path>`: (WFP Mode Only) Force remove all WFP filters for a specific process path.
+- `removeall`: Remove all rules created by the tool.
+- `removeall --force`: (WFP Mode Only) Force remove all WFP filters, sublayer, and provider.
 - `list`: List all network rules applied by this tool.
 
 Options:
-- `--force`: Used with 'remove' or 'removeall' for aggressive cleanup.
+- `--firewall`: Use the Windows Firewall API instead of WFP.
+- `--force`: (WFP Mode Only) Used with 'remove' or 'removeall' for aggressive cleanup.
 - `--quiet, -q`: Suppress output messages.
 - `help, -h`: Show this help message.
 ```
@@ -147,23 +171,11 @@ All target process names are XOR-obfuscated within the binary. You can change th
 
 ---
 
-### Full Process List
-
-The following is a comprehensive list of all EDR-related process names currently targeted by this tool:
-
-| Process Name                      | Process Name                           | Process Name              |
-| --------------------------------- | -------------------------------------- | ------------------------- |
-| 360LeakRepair.exe                 | SentinelStaticEnginePatcher.exe        | mc-mp-host.exe            |
-| 360NetRepair.exe                  | SentinelStaticEngineScanner.exe        | mc-neo-a-host.exe         |
-| ...                               | ...                                    | ...                       |
-| (Full table from original README) |                                        |                           |
-| ...                               | ...                                    | ...                       |
-| SentinelStaticEngine.exe          | mc-inst-ui.exe                         |                           |
-
-
 ## Credits
--   This project was inspired by the research and concepts demonstrated in the [FireBlock tool by MdSec](https://www.mdsec.co.uk/2023/09/nighthawk-0-2-6-three-wise-monkeys/).
--   The reflective loader implementation is based on the original work by [Stephen Fewer](https://github.com/stephenfewer/ReflectiveDLLInjection).
+- This project was inspired by the research and concepts demonstrated in the [FireBlock tool by MdSec](https://www.mdsec.co.uk/2023/09/nighthawk-0-2-6-three-wise-monkeys/).
+- The reflective loader implementation is based on the original work by [Stephen Fewer](https://github.com/stephenfewer/ReflectiveDLLInjection).
+
+---
 
 ### Full Process List
 
@@ -224,7 +236,4 @@ The following is a comprehensive list of all EDR-related process names targeted 
 | SentinelRemoteShellHost.exe | mc fab.exe | wsctrlsvc.exe |
 | SentinelScanFromContextMenu.exe | mc feedback.exe | xagt.exe |
 | SentinelServiceHost.exe | mc-fw-host.exe | zhongshenlong.exe |
-| SentinelStaticEngine.exe | mc-inst-ui.exe |  |
-
-## Credits
-https://www.mdsec.co.uk/2023/09/nighthawk-0-2-6-three-wise-monkeys/
+| SentinelStaticEngine.exe | mc-inst-ui.exe |

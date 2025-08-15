@@ -49,6 +49,25 @@ static const ErrorMapping errorMappings[] = {
     { 0x80320025, "FWP_E_INVALID_ACTION_TYPE" },
     { 0x80320028, "FWP_E_SESSION_DISABLED" },
     { 0x80320029, "FWP_E_NOT_A_COMMIT" },
+    { 0x8032001C, "FWP_E_NULL_POINTER: A required pointer is null." },
+    { 0x80320023, "FWP_E_NULL_DISPLAY_NAME: The displayData.name field cannot be null." },
+    { 0x80320024, "FWP_E_INVALID_ACTION_TYPE: The action type is not one of the allowed action types for a filter." },
+    { 0x80320026, "FWP_E_MATCH_TYPE_MISMATCH: A filter condition contains a match type that is not compatible with the operands." },
+    { 0x80320027, "FWP_E_TYPE_MISMATCH: An FWP_VALUE0 structure or an FWPM_CONDITION_VALUE0 structure is of the wrong type." },
+    { 0x8032002A, "FWP_E_DUPLICATE_CONDITION: A filter cannot contain multiple conditions operating on a single field." },
+    { 0x8032002C, "FWP_E_ACTION_INCOMPATIBLE_WITH_LAYER: The action type is not compatible with the layer." },
+    { 0x8032002D, "FWP_E_ACTION_INCOMPATIBLE_WITH_SUBLAYER: The action type is not compatible with the sub-layer." },
+    { 0x8032002E, "FWP_E_CONTEXT_INCOMPATIBLE_WITH_LAYER: The raw context or the provider context is not compatible with the layer." },
+    { 0x8032002F, "FWP_E_CONTEXT_INCOMPATIBLE_WITH_CALLOUT: The raw context or the provider context is not compatible with the callout." },
+    { 0x80320030, "FWP_E_INCOMPATIBLE_AUTH_METHOD: The authentication method is not compatible with the policy type." },
+    { 0x80320031, "FWP_E_INCOMPATIBLE_DH_GROUP: The Diffie-Hellman group is not compatible with the policy type." },
+    { 0x80320032, "FWP_E_EM_NOT_SUPPORTED: An IKE policy cannot contain an Extended Mode policy." },
+    { 0x80320033, "FWP_E_NEVER_MATCH: The enumeration template or subscription will never match any objects." },
+    { 0x80320034, "FWP_E_PROVIDER_CONTEXT_MISMATCH: The provider context is of the wrong type." },
+    { 0x80320036, "FWP_E_TOO_MANY_SUBLAYERS: The maximum number of sublayers has been reached. WFP supports at most 2^16 sublayers." },
+    { 0x80320038, "FWP_E_INVALID_AUTH_TRANSFORM: The IPsec authentication transform is not valid." },
+    { 0x80320039, "FWP_E_INVALID_CIPHER_TRANSFORM: The IPsec cipher transform is not valid." }
+
 };
 
 // Implementation of the error printing function (ANSI version)

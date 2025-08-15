@@ -1,16 +1,21 @@
-// File: dllmain.c
 #include "core.h"
+#include "firewall.h"
 
 HANDLE g_hHeap = NULL;
 BOOL g_isQuiet = FALSE;
 CRITICAL_SECTION g_critSec; // For thread safety
+BOOL g_isFirewallMode = FALSE; // Default to WFP mode
 
 // Worker thread to apply filters
 DWORD WINAPI BlockerThread(LPVOID lpParam) {
     (void)lpParam; // Unused
     g_isQuiet = TRUE; // Run quietly by default
     if (CheckProcessIntegrityLevel()) {
-        configureNetworkFilters();
+        if (g_isFirewallMode) {
+            FirewallConfigureBlockRules();
+        } else {
+            configureNetworkFilters();
+        }
     }
     return 0;
 }
@@ -44,12 +49,23 @@ __declspec(dllexport) void Initialize(void) {
     }
 }
 
+// --- New Exported Function to set mode ---
+__declspec(dllexport) void SetMode(BOOL useFirewall) {
+    EnterCriticalSection(&g_critSec);
+    g_isFirewallMode = useFirewall;
+    LeaveCriticalSection(&g_critSec);
+}
+
 // --- Exported Functions ---
 __declspec(dllexport) void BlockEDR(BOOL quiet) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
     if (CheckProcessIntegrityLevel()) {
-        configureNetworkFilters();
+        if (g_isFirewallMode) {
+            FirewallConfigureBlockRules();
+        } else {
+            configureNetworkFilters();
+        }
     }
     LeaveCriticalSection(&g_critSec);
 }
@@ -58,7 +74,11 @@ __declspec(dllexport) void AddRuleByPath(BOOL quiet, const char* processPath) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
     if (processPath && CheckProcessIntegrityLevel()) {
-        addProcessRule(processPath);
+        if (g_isFirewallMode) {
+            FirewallAddRuleByPath(processPath);
+        } else {
+            addProcessRule(processPath);
+        }
     }
     LeaveCriticalSection(&g_critSec);
 }
@@ -67,19 +87,31 @@ __declspec(dllexport) void RemoveAllRules(BOOL quiet) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
     if (CheckProcessIntegrityLevel()) {
-        removeAllRules();
+        if (g_isFirewallMode) {
+            FirewallRemoveAllRules();
+        } else {
+            removeAllRules();
+        }
     }
     LeaveCriticalSection(&g_critSec);
 }
 
-__declspec(dllexport) void RemoveRuleByID(BOOL quiet, const char* ruleIdStr) {
+__declspec(dllexport) void RemoveRuleByID(BOOL quiet, const char* ruleIdOrNameStr) {
     EnterCriticalSection(&g_critSec);
     g_isQuiet = quiet;
-    if (ruleIdStr && CheckProcessIntegrityLevel()) {
-        char *endptr;
-        UINT64 ruleId = CustomStrToULL(ruleIdStr, &endptr);
-        if (endptr != ruleIdStr) {
-            removeRuleById(ruleId);
+    if (ruleIdOrNameStr && CheckProcessIntegrityLevel()) {
+        if (g_isFirewallMode) {
+            // In firewall mode, the string is treated as a rule name.
+            // For simplicity, we use the function that derives the name from path.
+            // A more direct approach would be removing by exact name if provided.
+            FirewallRemoveRuleByName(ruleIdOrNameStr);
+        } else {
+            // In WFP mode, the string is treated as a numeric ID.
+            char *endptr;
+            UINT64 ruleId = CustomStrToULL(ruleIdOrNameStr, &endptr);
+            if (endptr != ruleIdOrNameStr) {
+                removeRuleById(ruleId);
+            }
         }
     }
     LeaveCriticalSection(&g_critSec);

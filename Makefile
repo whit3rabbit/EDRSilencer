@@ -6,7 +6,9 @@ CC = x86_64-w64-mingw32-gcc
 CNA_DIR = cna_script/EDRSilencer
 
 # Common source files used by both EXE and DLL
-COMMON_SRCS = core.c utils.c process.c errors.c
+COMMON_SRCS = core.c utils.c process.c errors.c firewall.c
+# Header files that should trigger a rebuild if changed
+HEADERS = core.h utils.h process.h errors.h firewall.h
 # Entry-point source for the Executable
 EXE_SRC = main.c
 # Entry-point source for the DLL
@@ -25,12 +27,13 @@ BOF_LOADER_OBJ = $(CNA_DIR)/bof_loader.x64.o
 
 # --- Flag Definitions ---
 # Common flags for C compilation
-CFLAGS_RELEASE = -Wall -Wextra -O2
-CFLAGS_DEBUG = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra
+CFLAGS_RELEASE = $(CFLAGS) -O2 -D_WIN32_WINNT=0x0601
+CFLAGS_DEBUG = $(CFLAGS) -g -D_WIN32_WINNT=0x0601
 # Linker flags for building an EXE
-LDFLAGS_EXE = -lfwpuclnt
+LDFLAGS_EXE = -lfwpuclnt -lole32 -loleaut32 -luuid
 # Linker flags for building a DLL (note the -shared flag)
-LDFLAGS_DLL = -lfwpuclnt -shared
+LDFLAGS_DLL = -lfwpuclnt -lole32 -loleaut32 -luuid -shared
 
 .PHONY: all release debug dll dll-debug bof clean
 
@@ -62,23 +65,23 @@ bof: $(BOF_LOADER_OBJ)
 # --- Build Rules ---
 
 # Rule to build the release EXE
-$(TARGET_EXE_RELEASE): $(COMMON_SRCS) $(EXE_SRC)
-	$(CC) $(CFLAGS_RELEASE) $^ -o $@ $(LDFLAGS_EXE) -s
-	@echo "Release EXE build complete: $@"
+$(TARGET_EXE_RELEASE): $(COMMON_SRCS) $(EXE_SRC) $(HEADERS)
+	$(CC) $(CFLAGS_RELEASE) $(filter %.c,$^) -o $(TARGET_EXE_RELEASE) $(LDFLAGS_EXE) -s
+	@echo "Release EXE build complete: $(TARGET_EXE_RELEASE)"
 
 # Rule to build the debug EXE
-$(TARGET_EXE_DEBUG): $(COMMON_SRCS) $(EXE_SRC)
-	$(CC) $(CFLAGS_DEBUG) $^ -o $@ $(LDFLAGS_EXE)
-	@echo "Debug EXE build complete: $@"
+$(TARGET_EXE_DEBUG): $(COMMON_SRCS) $(EXE_SRC) $(HEADERS)
+	$(CC) $(CFLAGS_DEBUG) $(filter %.c,$^) -o $(TARGET_EXE_DEBUG) $(LDFLAGS_EXE)
+	@echo "Debug EXE build complete: $(TARGET_EXE_DEBUG)"
 
 # Rule to build the release DLL
-$(TARGET_DLL_RELEASE): $(COMMON_SRCS) $(DLL_SRC)
-	$(CC) $(CFLAGS_RELEASE) $^ -o $@ $(LDFLAGS_DLL) -s
+$(TARGET_DLL_RELEASE): $(COMMON_SRCS) $(DLL_SRC) $(HEADERS)
+	$(CC) $(CFLAGS_RELEASE) $(filter %.c,$^) -o $@ $(LDFLAGS_DLL) -s
 	@echo "Release DLL build complete: $@"
 
 # Rule to build the debug DLL
-$(TARGET_DLL_DEBUG): $(COMMON_SRCS) $(DLL_SRC)
-	$(CC) $(CFLAGS_DEBUG) $^ -o $@ $(LDFLAGS_DLL)
+$(TARGET_DLL_DEBUG): $(COMMON_SRCS) $(DLL_SRC) $(HEADERS)
+	$(CC) $(CFLAGS_DEBUG) $(filter %.c,$^) -o $@ $(LDFLAGS_DLL)
 	@echo "Debug DLL build complete: $@"
 
 # Rule to build the BOF object file
