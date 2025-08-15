@@ -39,13 +39,13 @@ LDFLAGS_DLL = -lfwpuclnt -lole32 -loleaut32 -luuid -shared
 
 # Stealth/OPSEC defines (wide-string literals). Adjust names to blend in.
 STEALTH_DEFINES = \
-  -DEDR_PROVIDER_NAME=L"Windows Diagnostics Provider" \
-  -DEDR_SUBLAYER_NAME=L"Network Telemetry SubLayer" \
-  -DEDR_PROVIDER_DESCRIPTION=L"Windows diagnostics components" \
-  -DEDR_SUBLAYER_DESCRIPTION=L"Telemetry flow arbitration" \
-  -DFIREWALL_RULE_GROUP=L"@Windows Diagnostics" \
-  -DFIREWALL_RULE_NAME_FORMAT=L"Block Rule for %s" \
-  -DEDR_FILTER_NAME=L"Generic Network Block Rule"
+  -DEDR_PROVIDER_NAME='L"Windows Diagnostics Provider"' \
+  -DEDR_SUBLAYER_NAME='L"Network Telemetry SubLayer"' \
+  -DEDR_PROVIDER_DESCRIPTION='L"Windows diagnostics components"' \
+  -DEDR_SUBLAYER_DESCRIPTION='L"Telemetry flow arbitration"' \
+  -DFIREWALL_RULE_GROUP='L"@Windows Diagnostics"' \
+  -DFIREWALL_RULE_NAME_FORMAT='L"Block Rule for %s"' \
+  -DEDR_FILTER_NAME='L"Generic Network Block Rule"'
 
 # --- Main Targets ---
 
