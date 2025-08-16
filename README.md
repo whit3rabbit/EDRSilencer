@@ -78,14 +78,14 @@ You need a Windows cross-compiler: `x86_64-w64-mingw32-gcc` (MinGW-w64) to build
 The following `make` targets are available from the project root:
 
 -   `make` or `make release`: Compiles the release version of the executable (`EDRSilencer.exe`).
--   `make dll`: **(Recommended for C2 use)** Compiles the release DLL (`EDRSilencer.dll`), builds the required BOF loader, and copies the DLL into the `cna_script/EDRSilencer/` directory, preparing the full Cobalt Strike module.
+-   `make dll`: Compiles the release DLL (`EDRSilencer.dll`).
 -   `make debug` / `make dll-debug`: Compiles debug versions of the EXE or DLL.
 -   `make clean`: Removes all compiled artifacts.
 
 Additional convenience targets for OPSEC builds:
 
 -   `make stealth`: Builds the release EXE with generic, stealthy names/descriptions suitable for blending into enterprise environments.
--   `make stealth-dll`: Builds the release DLL and BOF with the same stealth defines and copies the DLL into `cna_script/EDRSilencer/`.
+-   `make stealth-dll`: Builds the release DLL with the same stealth defines.
 
 **To build the executable:**
 
@@ -93,7 +93,7 @@ Additional convenience targets for OPSEC builds:
 make
 ```
 
-**To build the complete Cobalt Strike DLL package:**
+**To build the DLL:**
 
 ```bash
 make dll
@@ -204,7 +204,7 @@ Commands:
 # Stealth EXE build
 make clean && make stealth
 
-# Stealth DLL + BOF build (and copy DLL into CNA folder)
+# Stealth DLL build
 make clean && make stealth-dll
 ```
 
@@ -252,42 +252,6 @@ By default, Windows Firewall rules created by this tool are placed in the group 
 
     - Keep the leading `@` to maintain hidden grouping in the GUI. Without it, the group will be visible to users.
     - Choose names that blend with the environment (e.g., `@Windows Network Diagnostics`, `@Microsoft Defender Policies`).
-
----
-
-## Cobalt Strike (Reflective DLL) Usage
-
-Another use case for `EDRSilencer` is as a reflective DLL executed entirely in memory via a C2 framework. The project is pre-configured for Cobalt Strike using a Beacon Object File (BOF) loader.
-
-### How it Works
-
-The included Aggressor script in the `cna_script/` directory (`EDRSilencer.cna`) provides a set of user-friendly commands. When a command like `edr_block` is issued, the script sends the `EDRSilencer.dll` and a small BOF loader (`bof_loader.x64.o`) to your Beacon. The BOF then acts as a reflective loader, mapping the DLL into Beacon's memory and calling the appropriate exported function without ever writing the DLL to disk.
-
-### Setup and Execution
-
-1.  **Build the Module:** Run `make dll` from the project root. This will compile `EDRSilencer.dll`, `bof_loader.x64.o`, and place the DLL in the correct directory (`cna_script/EDRSilencer/`).
-2.  **Load the Script:** In Cobalt Strike, go to `Scripting -> Load` and select the `cna_script/EDRSilencer.cna` file.
-3.  **Execute Commands:** You can now use the following commands in any Beacon console:
-    *   `edr_set_mode <wfp|firewall>`: Sets the operational mode for all subsequent commands. The default is `wfp`.
-        - Example: `edr_set_mode firewall`
-    *   `edr_block`: Applies block rules for all known EDRs using the currently selected mode.
-    *   `edr_add C:\path\to\process.exe`: Adds a block rule for a specific process.
-    *   `edr_remove <id_or_path>`: Removes a rule. **Important:** The required argument depends on the mode.
-        -   In **WFP mode**, you must provide the numeric **Filter ID** of the rule to remove. You can find this ID using the `list` command.
-        -   In **Firewall mode**, you must provide the exact process path used to create the rule.
-        - WFP Example: `edr_remove 1234567890`
-        - Firewall Example: `edr_remove C:\Windows\System32\curl.exe`
-    *   `edr_removeall`: Removes all rules created by the tool in the current mode.
-
-### Exported Functions
-
-For advanced use or integration with other C2 frameworks, the DLL exports the following functions:
--   `SetMode(BOOL useFirewall)`: Sets the operational mode. `TRUE` for Firewall mode, `FALSE` for WFP mode.
--   `Initialize(void)`: **(Deprecated)** Runs the main EDR blocking logic in a new thread using the default WFP mode.
--   `BlockEDR(BOOL quiet)`: Manually triggers the blocking logic in the currently selected mode.
--   `AddRuleByPath(BOOL quiet, const char* processPath)`: Adds a rule for a specific process.
--   `RemoveAllRules(BOOL quiet)`: Removes all rules.
--   `RemoveRuleByID(BOOL quiet, const char* ruleIdOrNameStr)`: Removes a rule. The second argument is treated as a numeric ID string in WFP mode and a process path in Firewall mode.
 
 ---
 
@@ -363,7 +327,6 @@ All target process names are XOR-obfuscated within the binary. You can change th
 
 ## Credits
 - This project was inspired by the research and concepts demonstrated in the [FireBlock tool by MdSec](https://www.mdsec.co.uk/2023/09/nighthawk-0-2-6-three-wise-monkeys/).
-- The reflective loader implementation is based on the original work by [Stephen Fewer](https://github.com/stephenfewer/ReflectiveDLLInjection).
 
 ---
 
