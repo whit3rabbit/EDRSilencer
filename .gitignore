@@ -1,9 +1,16 @@
+# Executables
 EDRSilencer.exe
 EDRSilencer_debug.exe
-EDRSilencer.o
-EDRSilencer_debug.o
+EDRSilencer-stealth.exe
+
+# Object files
+*.o
+
+# Other
 *.bak
 *.dll
 *.pyc
-*.o
-*.bof
+
+# IDE
+.vscode/
+.idea/
