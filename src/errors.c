@@ -1,5 +1,9 @@
-#include "utils.h"
-#include "errors.h" // For EPRINTF and EWPRINTF macros
+#include "common.h"
+
+typedef struct {
+    DWORD code;
+    const char* message;
+} ErrorMapping;
 
 // The lookup table. We'll add common WFP and Win32 errors.
 static const ErrorMapping errorMappings[] = {
@@ -83,9 +87,9 @@ void PrintDetailedError(const char* context, DWORD errorCode) {
     }
 
     if (message) {
-        EPRINTF("[-] %s. Reason: %s (0x%lX)\n", context, message, errorCode);
+        BeaconPrintf(CALLBACK_ERROR, "[-] %s. Reason: %s (0x%lX)\n", context, message, errorCode);
     } else {
-        EPRINTF("[-] %s. Error: 0x%lX\n", context, errorCode);
+        BeaconPrintf(CALLBACK_ERROR, "[-] %s. Error: 0x%lX\n", context, errorCode);
     }
 }
 
@@ -103,8 +107,8 @@ void PrintDetailedErrorW(const wchar_t* context, DWORD errorCode) {
 
     if (message) {
         // We print the message as multibyte because our console output is set for that
-        EWPRINTF(L"[-] %s. Reason: %hs (0x%lX)\n", context, message, errorCode);
+        BeaconPrintf(CALLBACK_ERROR, "[-] %ls. Reason: %hs (0x%lX)\n", context, message, errorCode);
     } else {
-        EWPRINTF(L"[-] %s. Error: 0x%lX\n", context, errorCode);
+        BeaconPrintf(CALLBACK_ERROR, "[-] %ls. Error: 0x%lX\n", context, errorCode);
     }
 }

