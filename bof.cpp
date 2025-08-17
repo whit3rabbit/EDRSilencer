@@ -5,14 +5,6 @@
 #endif
 
 extern "C" {
-    // This space is intentionally left blank. 
-    // All necessary functions are declared in common.h
-}
-
-// --- Only define DFR for Release builds ---
-#ifndef _DEBUG
-#include "src/dfr.h"
-#endif
 
 // --- Globals required by the ported code ---
 // These are safe in a BOF as they are re-initialized on each run.
@@ -20,7 +12,6 @@ BOOL g_isFirewallMode = FALSE;
 BOOL g_isQuiet = TRUE; // BOFs are always "quiet"
 BOOL g_isForce = FALSE; // Not used in this version
 HANDLE g_hHeap = NULL;  // Will be set to the process heap
-
 
 void go(char* args, int len) {
     datap parser;
@@ -32,7 +23,7 @@ void go(char* args, int len) {
 
     BeaconDataParse(&parser, args, len);
     command = BeaconDataExtract(&parser, NULL);
-    
+
     if (!command) {
         BeaconPrintf(CALLBACK_ERROR, "No command received.");
         return;
@@ -92,6 +83,13 @@ void go(char* args, int len) {
         BeaconPrintf(CALLBACK_ERROR, "Unknown command: %s", command);
     }
 }
+
+}
+
+// --- Only define DFR for Release builds ---
+#ifndef _DEBUG
+#include "src/dfr.h"
+#endif
 
 #ifdef _DEBUG
 #include <stdio.h>

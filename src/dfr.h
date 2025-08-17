@@ -2,7 +2,7 @@
 #ifndef DFR_H
 #define DFR_H
 
-#include <windows.h>
+#include "common.h"
 #include "base/helpers.h"
 
 // KERNEL32
@@ -25,7 +25,6 @@ DFR(KERNEL32, Process32Next);
 DFR(KERNEL32, QueryDosDeviceW);
 DFR(KERNEL32, QueryFullProcessImageNameW);
 DFR(KERNEL32, WideCharToMultiByte);
-DFR(KERNEL32, CopyMemory);
 
 // ADVAPI32
 DFR(ADVAPI32, AdjustTokenPrivileges);
