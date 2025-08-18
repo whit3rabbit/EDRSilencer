@@ -340,3 +340,11 @@ UINT64 CustomStrToULL(const char* str, char** endptr) {
 
     return result;
 }
+
+const wchar_t* LayerGuidToString(const GUID* layerGuid) {
+    if (IsEqualGUID(layerGuid, &FWPM_LAYER_ALE_AUTH_CONNECT_V4)) return L"ALE Connect v4";
+    if (IsEqualGUID(layerGuid, &FWPM_LAYER_ALE_AUTH_CONNECT_V6)) return L"ALE Connect v6";
+    if (IsEqualGUID(layerGuid, &FWPM_LAYER_OUTBOUND_TRANSPORT_V4)) return L"Outbound Transport v4";
+    if (IsEqualGUID(layerGuid, &FWPM_LAYER_OUTBOUND_TRANSPORT_V6)) return L"Outbound Transport v6";
+    return L"Unknown Layer";
+}

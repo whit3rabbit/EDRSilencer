@@ -114,4 +114,7 @@ char* decryptString(struct EncryptedString encStr);
 // FilterExists: Utility to detect presence of a named filter for an AppID at a layer.
 BOOL FilterExists(HANDLE hEngine, const GUID* layerKey, const FWP_BYTE_BLOB* appId, const wchar_t* filterName);
 
+// Helper to convert WFP layer GUIDs to human-readable names
+const wchar_t* LayerGuidToString(const GUID* layerGuid);
+
 #endif // UTILS_H

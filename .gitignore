@@ -14,3 +14,4 @@ EDRSilencer-stealth.exe
 # IDE
 .vscode/
 .idea/
+.DS_Store

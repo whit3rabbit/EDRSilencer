@@ -115,6 +115,8 @@ __declspec(dllexport) void ListRules(BOOL quiet) {
     if (CheckProcessIntegrityLevel()) {
         if (g_isFirewallMode) {
             PRINTF("[!] Listing rules is only implemented for WFP mode.\n");
+            PRINTF("    Use standard Windows commands to view firewall rules, e.g.:\n");
+            PRINTF("    > netsh advfirewall firewall show rule name=all | findstr EDRSilencer\n");
         } else {
             listRules();
         }

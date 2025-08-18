@@ -326,7 +326,15 @@ void listRules() {
     for (UINT32 i = 0; i < numEntries; i++) {
         UINT64 id = filters[i]->filterId;
         const wchar_t* name = filters[i]->displayData.name ? filters[i]->displayData.name : L"(no name)";
-        WPRINTF(L"    ID: %llu  Name: %s\n", id, name);
+        const wchar_t* description = filters[i]->displayData.description ? filters[i]->displayData.description : L"(no description)";
+        const wchar_t* layer = LayerGuidToString(&filters[i]->layerKey);
+        const char* action = (filters[i]->action.type == FWP_ACTION_BLOCK) ? "Block" : "Permit";
+
+        WPRINTF(L"  Filter ID: %llu\n", id);
+        WPRINTF(L"    Name: %s\n", name);
+        WPRINTF(L"    Desc: %s\n", description);
+        WPRINTF(L"    Action: %S\n", action);
+        WPRINTF(L"    Layer: %s\n\n", layer);
     }
 
     if (filters) {
