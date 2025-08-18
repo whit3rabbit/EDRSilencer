@@ -93,23 +93,30 @@ void removeAllRules() {
 
     PRINTF("[+] Starting comprehensive cleanup...\n");
 
-    HANDLE enumHandle = NULL;
-    FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
-    enumTemplate.providerKey = (GUID*)&ProviderGUID;
-    
-    result = FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle);
-    if (result == ERROR_SUCCESS) {
-        FWPM_FILTER0** filters = NULL;
-        UINT32 numEntries = 0;
-        result = FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries);
-        if (result == ERROR_SUCCESS && numEntries > 0) {
-            PRINTF("[+] Removing %u filter(s)...\n", numEntries);
-            for (UINT32 i = 0; i < numEntries; i++) {
-                FwpmFilterDeleteById0(hEngine, filters[i]->filterId);
+    if (g_isForce) {
+        PRINTF("[!] Force mode enabled. Directly removing provider and sublayer.\n");
+    } else {
+        HANDLE enumHandle = NULL;
+        FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
+        enumTemplate.providerKey = (GUID*)&ProviderGUID;
+
+        result = FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle);
+        if (result == ERROR_SUCCESS) {
+            FWPM_FILTER0** filters = NULL;
+            UINT32 numEntries = 0;
+            result = FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries);
+            if (result == ERROR_SUCCESS && numEntries > 0) {
+                PRINTF("[+] Removing %u filter(s)...\n", numEntries);
+                for (UINT32 i = 0; i < numEntries; i++) {
+                    FwpmFilterDeleteById0(hEngine, filters[i]->filterId);
+                }
+                FwpmFreeMemory0((void**)&filters);
             }
-            FwpmFreeMemory0((void**)&filters);
+            FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
+        } else if ((long)result != FWP_E_NEVER_MATCH) {
+            // If there are no filters, that's fine. Any other error is worth noting but not fatal for cleanup.
+            PrintDetailedError("Could not create filter enum handle during cleanup", result);
         }
-        FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
     }
 
     result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
@@ -320,8 +327,13 @@ void listRules() {
     enumTemplate.providerKey = (GUID*)&ProviderGUID;
 
     result = FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle);
-    if (result != ERROR_SUCCESS) {
-        // If we get here, it's a real, unexpected error, not just a missing provider.
+    if (result == (DWORD)FWP_E_NEVER_MATCH) {
+        // This is a clean exit condition, meaning the provider exists but has no filters.
+        PRINTF("[+] No active filters found for provider '%ls'.\n", EDR_PROVIDER_NAME);
+        FwpmEngineClose0(hEngine);
+        return;
+    } else if (result != ERROR_SUCCESS) {
+        // Any other error is unexpected and should be reported.
         PrintDetailedError("FwpmFilterCreateEnumHandle0 failed", result);
         FwpmEngineClose0(hEngine);
         return;

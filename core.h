@@ -4,6 +4,9 @@
 
 #include "utils.h"
 
+// Global flags from main.c
+extern BOOL g_isForce;
+
 /*
  * core.h
  * ------
