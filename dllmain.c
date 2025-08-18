@@ -155,7 +155,7 @@ __declspec(dllexport) void RemoveAllRules(BOOL quiet) {
         if (g_isFirewallMode) {
             FirewallRemoveAllRules();
         } else {
-            removeAllRules();
+            removeAllRules(FALSE);
         }
     }
     LeaveCriticalSection(&g_critSec);

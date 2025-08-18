@@ -19,12 +19,8 @@ void showHelp() {
     PRINTF("                (In WFP mode, this is a numeric ID. In firewall mode, this is a process path.)\n");
     PRINTF("                Example (WFP): EDRSilencer.exe remove 1234567890\n");
     PRINTF("                Example (Firewall): EDRSilencer.exe --firewall remove \"C:\\...\\app.exe\"\n");
-    PRINTF("  remove --force <path> - Force remove all WFP filters for a specific process path.\n");
-    PRINTF("                Example: EDRSilencer.exe remove --force \"C:\\Windows\\System32\\curl.exe\"\n");
-    PRINTF("  removeall --force - Force remove all WFP filters, sublayer, and provider.\n");
     PRINTF("  list        - List all network rules applied by this tool.\n");
     PRINTF("\nOptions:\n");
-    PRINTF("  --force     - Used with 'remove' or 'removeall' for aggressive cleanup.\n");
     PRINTF("  --quiet, -q - Suppress output messages.\n");
     PRINTF("  --firewall  - Use Windows Firewall instead of WFP for rules.\n");
     PRINTF("  help, -h    - Show this help message.\n");
@@ -40,11 +36,6 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (lstrcmpiA(argv[i], "--quiet") == 0 || lstrcmpiA(argv[i], "-q") == 0) {
             g_isQuiet = TRUE;
-            for (int j = i; j < argc - 1; j++) { argv[j] = argv[j + 1]; }
-            argc--;
-            i--;
-        } else if (lstrcmpiA(argv[i], "--force") == 0) {
-            g_isForce = TRUE;
             for (int j = i; j < argc - 1; j++) { argv[j] = argv[j + 1]; }
             argc--;
             i--;
@@ -72,47 +63,22 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE_PRIVS;
     }
 
-    if (lstrcmpiA(argv[1], "removeall") == 0) {
-        if (g_isFirewallMode) {
-            FirewallRemoveAllRules();
-        } else {
-            removeAllRules();
-        }
-    } else if (lstrcmpiA(argv[1], "remove") == 0) {
+    if (lstrcmpiA(argv[1], "remove") == 0) {
         if (argc < 3) {
-            EPRINTF("[-] Missing argument. Provide a rule ID or use --force with a process path.\n");
+            EPRINTF("[-] Missing argument for 'remove'. Provide a rule ID.\n");
             HeapDestroy(g_hHeap);
             return EXIT_FAILURE_ARGS;
         }
         if (g_isFirewallMode) {
-            if (g_isForce) {
-                EPRINTF("[-] The --force flag is not applicable in firewall mode.\n");
-                HeapDestroy(g_hHeap);
-                return EXIT_FAILURE_ARGS;
-            }
             FirewallRemoveRuleByPath(argv[2]);
         } else {
-            if (g_isForce) {
-                removeRulesByPath(argv[2]);
-            } else {
-                // Check if the argument is numeric.
-                char* endptr;
-                UINT64 ruleId = CustomStrToULL(argv[2], &endptr);
-
-                // If the entire string was not a valid number...
-                if (endptr == argv[2] || *endptr != '\0') {
-                    // ...check if it looks like a file path.
-                    if (strchr(argv[2], '\\') != NULL || strchr(argv[2], '/') != NULL) {
-                        EPRINTF("[-] Error: You provided a path for the 'remove' command in WFP mode.\n");
-                        EPRINTF("    Hint: In WFP mode, 'remove' requires a numeric Filter ID.\n");
-                        EPRINTF("    Hint: Use the 'list' command to find the ID, or use 'remove --force <path>'.\n");
-                    } else {
-                        EPRINTF("[-] Invalid rule ID provided for WFP mode. Please provide a numeric ID.\n");
-                    }
-                    return EXIT_FAILURE_ARGS; // Exit after hint
-                }
-                removeRuleById(ruleId); // This is the success path
+            char* endptr;
+            UINT64 ruleId = CustomStrToULL(argv[2], &endptr);
+            if (endptr == argv[2] || *endptr != '\0') {
+                EPRINTF("[-] Invalid rule ID provided. Please provide a numeric ID for WFP mode.\n");
+                return EXIT_FAILURE_ARGS;
             }
+            removeRuleById(ruleId);
         }
     } else if (lstrcmpiA(argv[1], "blockedr") == 0 || lstrcmpiA(argv[1], "add") == 0) {
         if (g_isForce) {

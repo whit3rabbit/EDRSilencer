@@ -153,7 +153,7 @@ The WFP provider and sublayer also have descriptions that are persisted on the t
 
 3. Notes:
 
-    - These values are written into the WFP provider and sublayer objects. To replace existing artifacts on a host, run a cleanup first (e.g., `removeall`) and reapply so new names/descriptions take effect.
+    - These values are written into the WFP provider and sublayer objects when they are first created. If you recompile with new names, you must manually clean up the old provider and sublayer on the target system for the new names to be used.
     - Remember to use wide-string literals (prefix with `L`).
 
 #### Overrideable Macros (Quick Reference)
@@ -271,14 +271,10 @@ Commands:
   - In **Firewall mode (`--firewall`)**, you must provide the exact process path.
   - WFP Example: EDRSilencer.exe remove 1234567890
   - Firewall Example: EDRSilencer.exe --firewall remove "C:\Windows\System32\curl.exe"
-- `remove --force <path>`: (WFP Mode Only) Force remove all WFP filters for a specific process path.
-- `removeall`: Remove all rules created by the tool.
-- `removeall --force`: (WFP Mode Only) Force remove all WFP filters, sublayer, and provider.
 - `list`: List all network rules applied by this tool.
 
 Options:
 - `--firewall`: Use the Windows Firewall API instead of WFP.
-- `--force`: (WFP Mode Only) Used with 'remove' or 'removeall' for aggressive cleanup.
 - `--quiet, -q`: Suppress output messages.
 - `help, -h`: Show this help message.
 ```

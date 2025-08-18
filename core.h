@@ -42,7 +42,7 @@ void configureNetworkFilters();
 // addProcessRule: Apply generic block filters for a single process path.
 void addProcessRule(const char* processPath);
 // removeAllRules: Remove all filters owned by our provider and tear down sublayer/provider.
-void removeAllRules();
+void removeAllRules(BOOL isForce);
 // removeRuleById: Delete a single filter by its numeric ID (see listRules to discover IDs).
 void removeRuleById(UINT64 ruleId);
 // removeRulesByPath: Convert path -> AppID and remove all matching filters across key layers.

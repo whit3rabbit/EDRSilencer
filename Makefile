@@ -25,9 +25,9 @@ CFLAGS = -Wall -Wextra
 CFLAGS_RELEASE = $(CFLAGS) -O2 -D_WIN32_WINNT=0x0601
 CFLAGS_DEBUG = $(CFLAGS) -g -D_WIN32_WINNT=0x0601
 # Linker flags for building an EXE
-LDFLAGS_EXE = -lfwpuclnt -lole32 -loleaut32 -luuid
+LDFLAGS_EXE = -lfwpuclnt -lole32 -loleaut32 -luuid -lrpcrt4
 # Linker flags for building a DLL (note the -shared flag)
-LDFLAGS_DLL = -lfwpuclnt -lole32 -loleaut32 -luuid -shared
+LDFLAGS_DLL = -lfwpuclnt -lole32 -loleaut32 -luuid -lrpcrt4 -shared
 
 .PHONY: all release debug dll dll-debug stealth stealth-dll clean
 

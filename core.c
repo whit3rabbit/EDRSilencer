@@ -2,6 +2,12 @@
 #include <initguid.h>
 #include <fwpmu.h>
 #include "core.h"
+#include <initguid.h> // Required for DEFINE_GUID
+
+// Manually define the sublayer condition key if missing from the MinGW headers.
+#ifndef FWPM_CONDITION_SUB_LAYER_KEY
+DEFINE_GUID(FWPM_CONDITION_SUB_LAYER_KEY, 0x5736B86F, 0x5466, 0x4DA7, 0x92, 0x3A, 0x2D, 0x29, 0xB3, 0x2E, 0x53, 0x63);
+#endif
 #include "errors.h"
 #include <strsafe.h>
 
@@ -82,53 +88,134 @@ void addProcessRule(const char* processPath) {
 /*
  * removeAllRules
  * --------------
- * Performs a comprehensive cleanup:
- * - Enumerates all filters owned by our provider and deletes them.
- * - Removes our sublayer and provider (ignoring not-found cases).
+ * Performs a comprehensive cleanup by deleting all filters, then the sublayer,
+ * and finally the provider. This hierarchical deletion is required to avoid
+ * FWP_E_IN_USE errors. The isForce flag is now used to control console output only.
  */
-void removeAllRules() {
-    HANDLE hEngine = NULL;
-    DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
-    if (result != ERROR_SUCCESS) { PrintDetailedError("FwpmEngineOpen0 failed", result); return; }
+ // Forward declaration for diagnostic function
+static void DiagnoseSubLayerUsage(HANDLE hEngine, const GUID* subLayerGuid);
 
-    PRINTF("[+] Starting comprehensive cleanup...\n");
-
-    if (g_isForce) {
-        PRINTF("[!] Force mode enabled. Directly removing provider and sublayer.\n");
-    } else {
-        HANDLE enumHandle = NULL;
-        FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
-        enumTemplate.providerKey = (GUID*)&ProviderGUID;
-
-        result = FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle);
-        if (result == ERROR_SUCCESS) {
-            FWPM_FILTER0** filters = NULL;
-            UINT32 numEntries = 0;
-            result = FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries);
-            if (result == ERROR_SUCCESS && numEntries > 0) {
-                PRINTF("[+] Removing %u filter(s)...\n", numEntries);
-                for (UINT32 i = 0; i < numEntries; i++) {
-                    FwpmFilterDeleteById0(hEngine, filters[i]->filterId);
-                }
-                FwpmFreeMemory0((void**)&filters);
-            }
-            FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
-        } else if ((long)result != FWP_E_NEVER_MATCH) {
-            // If there are no filters, that's fine. Any other error is worth noting but not fatal for cleanup.
-            PrintDetailedError("Could not create filter enum handle during cleanup", result);
-        }
+static void DeleteFiltersByTemplate(HANDLE hEngine, FWPM_FILTER_ENUM_TEMPLATE0* enumTemplate, const char* context) {
+    HANDLE enumHandle = NULL;
+    DWORD result = FwpmFilterCreateEnumHandle0(hEngine, enumTemplate, &enumHandle);
+    if (result != ERROR_SUCCESS) {
+        // Errors like NOT_FOUND are expected if no filters match, so we don't log them.
+        return;
     }
 
-    result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
-    if (result == ERROR_SUCCESS) { PRINTF("[+] WFP sublayer removed successfully.\n"); }
-    else if ((long)result != FWP_E_SUBLAYER_NOT_FOUND) { PrintDetailedError("FwpmSubLayerDeleteByKey0 failed", result); }
+    FWPM_FILTER0** filters = NULL;
+    UINT32 numEntries = 0;
+    result = FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries);
+    if (result == ERROR_SUCCESS && numEntries > 0) {
+        PRINTF("[+] Removing %u filter(s) based on %s...\n", numEntries, context);
+        
+        // Use a transaction for atomic deletion
+        result = FwpmTransactionBegin0(hEngine, 0);
+        if (result == ERROR_SUCCESS) {
+            for (UINT32 i = 0; i < numEntries; i++) {
+                FwpmFilterDeleteById0(hEngine, filters[i]->filterId);
+            }
+            result = FwpmTransactionCommit0(hEngine);
+            if (result != ERROR_SUCCESS) {
+                PrintDetailedError("Failed to commit filter deletion transaction", result);
+                FwpmTransactionAbort0(hEngine);
+            }
+        } else {
+            PrintDetailedError("Failed to begin filter deletion transaction", result);
+        }
+        FwpmFreeMemory0((void**)&filters);
+    }
+    FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
+}
 
+void removeAllRules(BOOL isForce) {
+    HANDLE hEngine = NULL;
+    DWORD result = FwpmEngineOpen0(NULL, RPC_C_AUTHN_WINNT, NULL, NULL, &hEngine);
+    if (result != ERROR_SUCCESS) {
+        PrintDetailedError("FwpmEngineOpen0 failed", result);
+        return;
+    }
+
+    PRINTF("[+] Starting comprehensive cleanup...\n");
+    if (isForce) {
+        PRINTF("[!] Force mode enabled.\n");
+    }
+
+    // --- STEP 1: Comprehensive filter deletion ---
+    // Method A: Delete all filters owned by our provider
+    FWPM_FILTER_ENUM_TEMPLATE0 providerTemplate = {0};
+    providerTemplate.providerKey = (GUID*)&ProviderGUID;
+    DeleteFiltersByTemplate(hEngine, &providerTemplate, "provider key");
+
+    // Method B: Delete any remaining filters using our sublayer (catches orphans)
+    FWPM_FILTER_ENUM_TEMPLATE0 subLayerTemplate = {0};
+    FWPM_FILTER_CONDITION0 subLayerCondition = {0};
+    FWP_BYTE_BLOB subLayerBlob = {0};
+
+    subLayerCondition.fieldKey = FWPM_CONDITION_SUB_LAYER_KEY;
+    subLayerCondition.matchType = FWP_MATCH_EQUAL;
+    subLayerCondition.conditionValue.type = FWP_BYTE_BLOB_TYPE;
+    subLayerCondition.conditionValue.byteBlob = &subLayerBlob;
+    subLayerBlob.size = sizeof(GUID);
+    subLayerBlob.data = (UINT8*)&SubLayerGUID;
+
+    subLayerTemplate.numFilterConditions = 1;
+    subLayerTemplate.filterCondition = &subLayerCondition;
+    DeleteFiltersByTemplate(hEngine, &subLayerTemplate, "sublayer key");
+
+    // --- STEP 2: Delete the sublayer ---
+    result = FwpmSubLayerDeleteByKey0(hEngine, &SubLayerGUID);
+    if (result == ERROR_SUCCESS) {
+        PRINTF("[+] WFP sublayer removed successfully.\n");
+    } else if ((long)result != FWP_E_SUBLAYER_NOT_FOUND) {
+        PrintDetailedError("FwpmSubLayerDeleteByKey0 failed", result);
+        // If deletion fails, run diagnostics to find out why.
+        DiagnoseSubLayerUsage(hEngine, &SubLayerGUID);
+    }
+
+    // --- STEP 3: Delete the provider ---
     result = FwpmProviderDeleteByKey0(hEngine, &ProviderGUID);
-    if (result == ERROR_SUCCESS) { PRINTF("[+] WFP provider removed successfully.\n"); }
-    else if ((long)result != FWP_E_PROVIDER_NOT_FOUND) { PrintDetailedError("FwpmProviderDeleteByKey0 failed", result); }
+    if (result == ERROR_SUCCESS) {
+        PRINTF("[+] WFP provider removed successfully.\n");
+    } else if ((long)result != FWP_E_PROVIDER_NOT_FOUND) {
+        PrintDetailedError("FwpmProviderDeleteByKey0 failed", result);
+    }
 
     FwpmEngineClose0(hEngine);
     PRINTF("[+] Cleanup complete.\n");
+}
+
+static void DiagnoseSubLayerUsage(HANDLE hEngine, const GUID* subLayerGuid) {
+    PRINTF("[!] Running diagnostics to find filters still using the sublayer...\n");
+    HANDLE enumHandle = NULL;
+    FWPM_FILTER0** filters = NULL;
+    UINT32 numEntries = 0;
+    
+    FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0}; // Enumerate ALL filters
+    enumTemplate.enumType = FWP_FILTER_ENUM_OVERLAPPING;
+    enumTemplate.actionMask = 0xFFFFFFFF;
+
+    if (FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle) == ERROR_SUCCESS) {
+        if (FwpmFilterEnum0(hEngine, enumHandle, 0xFFFFFFFF, &filters, &numEntries) == ERROR_SUCCESS) {
+            UINT32 found = 0;
+            for (UINT32 i = 0; i < numEntries; i++) {
+                if (IsEqualGUID(&filters[i]->subLayerKey, subLayerGuid)) {
+                    found++;
+                    char providerKeyStr[40];
+                    UuidToStringA(filters[i]->providerKey, (RPC_CSTR*)&providerKeyStr);
+                    WPRINTF(L"    > Lingering Filter ID: %llu, Name: %s, Provider: %S\n", 
+                            filters[i]->filterId,
+                            filters[i]->displayData.name ? filters[i]->displayData.name : L"(no name)",
+                            providerKeyStr);
+                }
+            }
+            if (found == 0) {
+                PRINTF("[!] Diagnostics found no filters using the sublayer. The issue may be external or a race condition.\n");
+            }
+            FwpmFreeMemory0((void**)&filters);
+        }
+        FwpmFilterDestroyEnumHandle0(hEngine, enumHandle);
+    }
 }
 
 /*
