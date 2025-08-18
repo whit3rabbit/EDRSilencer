@@ -138,6 +138,14 @@ int main(int argc, char *argv[]) {
                 addProcessRule(argv[2]);
             }
         }
+    } else if (lstrcmpiA(argv[1], "list") == 0) {
+        if (g_isFirewallMode) {
+            PRINTF("[!] Listing rules is only implemented for WFP mode.\n");
+            PRINTF("    Use standard Windows commands to view firewall rules, e.g.:\n");
+            PRINTF("    > netsh advfirewall firewall show rule name=all | findstr \"EDR Silencer\"\n");
+        } else {
+            listRules();
+        }
     } else {
         EPRINTF("[-] Invalid command: \"%s\". Use -h for help.\n", argv[1]);
         HeapDestroy(g_hHeap);

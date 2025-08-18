@@ -301,12 +301,27 @@ void listRules() {
         return;
     }
 
+    // Check if our provider exists before trying to enumerate from it.
+    FWPM_PROVIDER0* provider = NULL;
+    result = FwpmProviderGetByKey0(hEngine, &ProviderGUID, &provider);
+    if ((long)result == FWP_E_PROVIDER_NOT_FOUND) {
+        // This is a clean exit condition, not an error.
+        PRINTF("[+] Provider '%ls' not found. No rules have been added by this tool yet.\n", EDR_PROVIDER_NAME);
+        FwpmEngineClose0(hEngine);
+        return;
+    }
+    // Free the provider object if it was found. We only needed to check for its existence.
+    if (provider) {
+        FwpmFreeMemory0((void**)&provider);
+    }
+
     HANDLE enumHandle = NULL;
     FWPM_FILTER_ENUM_TEMPLATE0 enumTemplate = {0};
     enumTemplate.providerKey = (GUID*)&ProviderGUID;
 
     result = FwpmFilterCreateEnumHandle0(hEngine, &enumTemplate, &enumHandle);
     if (result != ERROR_SUCCESS) {
+        // If we get here, it's a real, unexpected error, not just a missing provider.
         PrintDetailedError("FwpmFilterCreateEnumHandle0 failed", result);
         FwpmEngineClose0(hEngine);
         return;
