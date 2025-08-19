@@ -1,8 +1,11 @@
-#include "utils.h"
-#include <fwpmu.h>
-#include "errors.h"
+#include "utils.hpp"
+#include "errors.hpp"
 #include <strsafe.h>
+ #include <string>
+ #include <climits>
+#pragma comment(lib, "Advapi32.lib")
 
+namespace EDRSilencer {
 const char XOR_KEY = 0x42;
 
 
@@ -20,6 +23,26 @@ void ConsoleWriteA(HANDLE hConsole, const char* format, ...) {
         WriteFile(hConsole, buffer, lstrlenA(buffer), &bytesWritten, NULL);
     }
     va_end(args);
+}
+
+
+BOOL AnsiToWide(std::string_view ansi, std::wstring& wideOut) {
+    // Use system ACP to match Firewall COM expectations
+    if (ansi.empty()) { wideOut.clear(); return TRUE; }
+    int needed = MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), nullptr, 0);
+    if (needed <= 0) return FALSE;
+    wideOut.resize(static_cast<size_t>(needed));
+    int written = MultiByteToWideChar(CP_ACP, 0, ansi.data(), static_cast<int>(ansi.size()), wideOut.data(), needed);
+    return written > 0;
+}
+
+BOOL WideToAnsi(std::wstring_view wide, std::string& ansiOut) {
+    if (wide.empty()) { ansiOut.clear(); return TRUE; }
+    int needed = WideCharToMultiByte(CP_ACP, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+    if (needed <= 0) return FALSE;
+    ansiOut.resize(static_cast<size_t>(needed));
+    int written = WideCharToMultiByte(CP_ACP, 0, wide.data(), static_cast<int>(wide.size()), ansiOut.data(), needed, nullptr, nullptr);
+    return written > 0;
 }
 
 void ConsoleWriteW(HANDLE hConsole, const wchar_t* format, ...) {
@@ -138,7 +161,9 @@ BOOL EnableSeDebugPrivilege() {
 }
 
 void CharArrayToWCharArray(const char charArray[], WCHAR wCharArray[], size_t wCharArraySize) {
-    int result = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, wCharArray, wCharArraySize);
+    // MultiByteToWideChar expects int for output buffer size; clamp safely to INT_MAX
+    int cchWide = (wCharArraySize > static_cast<size_t>(INT_MAX)) ? INT_MAX : static_cast<int>(wCharArraySize);
+    int result = MultiByteToWideChar(CP_UTF8, 0, charArray, -1, wCharArray, cchWide);
 
     if (result == 0) {
         PrintDetailedError("MultiByteToWideChar failed", GetLastError());
@@ -165,24 +190,24 @@ ErrorCode ConvertToNtPath(PCWSTR filePath, wchar_t* ntPathBuffer, size_t bufferS
     WCHAR driveName[10];
     WCHAR ntDrivePath[MAX_PATH];
     if (!filePath || !ntPathBuffer) {
-        return CUSTOM_NULL_INPUT;
+        return CustomErrorCode::CUSTOM_NULL_INPUT;
     }
 
     if (!GetDriveName(filePath, driveName, sizeof(driveName) / sizeof(WCHAR))) {
-        return CUSTOM_DRIVE_NAME_NOT_FOUND;
+        return CustomErrorCode::CUSTOM_DRIVE_NAME_NOT_FOUND;
     }
 
     if (QueryDosDeviceW(driveName, ntDrivePath, sizeof(ntDrivePath) / sizeof(WCHAR)) == 0) {
-        return CUSTOM_FAILED_TO_GET_DOS_DEVICE_NAME;
+        return CustomErrorCode::CUSTOM_FAILED_TO_GET_DOS_DEVICE_NAME;
     }
 
     HRESULT hr = StringCchPrintfW(ntPathBuffer, bufferSize / sizeof(wchar_t), L"%ls%ls", ntDrivePath, filePath + lstrlenW(driveName));
     if (FAILED(hr)) {
-        return CUSTOM_STRING_FORMATTING_ERROR;
+        return CustomErrorCode::CUSTOM_STRING_FORMATTING_ERROR;
     }
 
     CharLowerW(ntPathBuffer);
-    return CUSTOM_SUCCESS;
+    return CustomErrorCode::CUSTOM_SUCCESS;
 }
 
 
@@ -201,17 +226,17 @@ BOOL FileExists(PCWSTR filePath) {
 
 ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId) {
     if (!FileExists(filePath)) {
-        return CUSTOM_FILE_NOT_FOUND;
+        return CustomErrorCode::CUSTOM_FILE_NOT_FOUND;
     }
 
     WCHAR ntPath[MAX_PATH];
     ErrorCode errorCode = ConvertToNtPath(filePath, ntPath, sizeof(ntPath));
-    if (errorCode != CUSTOM_SUCCESS) {
+    if (errorCode != CustomErrorCode::CUSTOM_SUCCESS) {
         return errorCode;
     }
     *appId = (FWP_BYTE_BLOB*)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, sizeof(FWP_BYTE_BLOB));
     if (!*appId) {
-        return CUSTOM_MEMORY_ALLOCATION_ERROR;
+        return CustomErrorCode::CUSTOM_MEMORY_ALLOCATION_ERROR;
     }
 
     (*appId)->size = (lstrlenW(ntPath) + 1) * sizeof(WCHAR);
@@ -219,11 +244,11 @@ ErrorCode CustomFwpmGetAppIdFromFileName0(PCWSTR filePath, FWP_BYTE_BLOB** appId
     (*appId)->data = (UINT8*)HeapAlloc(g_hHeap, 0, (*appId)->size);
     if (!(*appId)->data) {
         HeapFree(g_hHeap, 0, *appId);
-        return CUSTOM_MEMORY_ALLOCATION_ERROR;
+        return CustomErrorCode::CUSTOM_MEMORY_ALLOCATION_ERROR;
     }
     // memcpy is also CRT, but often intrinsic. CopyMemory is the Win32 equivalent.
     CopyMemory((*appId)->data, ntPath, (*appId)->size);
-    return CUSTOM_SUCCESS;
+    return CustomErrorCode::CUSTOM_SUCCESS;
 }
 
 void FreeAppId(FWP_BYTE_BLOB* appId) {
@@ -252,22 +277,15 @@ BOOL getProcessFullPath(DWORD pid, WCHAR* fullPath, DWORD maxChars) {
     return TRUE;
 }
 
-char* decryptString(struct EncryptedString encStr) {
+std::string decryptString(const struct EncryptedString& encStr) {
     if (!encStr.data || encStr.size == 0) {
-        return NULL;
+        return {};
     }
-
-    char* decrypted = (char*)HeapAlloc(g_hHeap, HEAP_ZERO_MEMORY, encStr.size + 1);
-    if (!decrypted) {
-        EPRINTF("[-] Failed to allocate memory for decrypted string.\n");
-        return NULL;
-    }
-
+    std::string decrypted;
+    decrypted.reserve(encStr.size);
     for (size_t i = 0; i < encStr.size; ++i) {
-        decrypted[i] = encStr.data[i] ^ XOR_KEY;
+        decrypted.push_back(static_cast<char>(encStr.data[i] ^ XOR_KEY));
     }
-    decrypted[encStr.size] = '\0';
-
     return decrypted;
 }
 
@@ -314,8 +332,13 @@ UINT64 CustomStrToULL(const char* str, char** endptr) {
         return 0;
     }
 
+    #if 0
     while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == '\f' || *p == '\v')) {
         p++;
+    }
+    #endif
+    while (*p && isspace(static_cast<unsigned char>(*p))) {
+        ++p;
     }
 
     while (*p && (*p >= '0' && *p <= '9')) {
@@ -342,9 +365,11 @@ UINT64 CustomStrToULL(const char* str, char** endptr) {
 }
 
 const wchar_t* LayerGuidToString(const GUID* layerGuid) {
-    if (IsEqualGUID(layerGuid, &FWPM_LAYER_ALE_AUTH_CONNECT_V4)) return L"ALE Connect v4";
-    if (IsEqualGUID(layerGuid, &FWPM_LAYER_ALE_AUTH_CONNECT_V6)) return L"ALE Connect v6";
-    if (IsEqualGUID(layerGuid, &FWPM_LAYER_OUTBOUND_TRANSPORT_V4)) return L"Outbound Transport v4";
-    if (IsEqualGUID(layerGuid, &FWPM_LAYER_OUTBOUND_TRANSPORT_V6)) return L"Outbound Transport v6";
+    if (IsEqualGUID(*layerGuid, FWPM_LAYER_ALE_AUTH_CONNECT_V4)) return L"ALE Connect v4";
+    if (IsEqualGUID(*layerGuid, FWPM_LAYER_ALE_AUTH_CONNECT_V6)) return L"ALE Connect v6";
+    if (IsEqualGUID(*layerGuid, FWPM_LAYER_OUTBOUND_TRANSPORT_V4)) return L"Outbound Transport v4";
+    if (IsEqualGUID(*layerGuid, FWPM_LAYER_OUTBOUND_TRANSPORT_V6)) return L"Outbound Transport v6";
     return L"Unknown Layer";
 }
+
+} // namespace EDRSilencer

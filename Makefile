@@ -1,15 +1,15 @@
 # Compiler
-CC = x86_64-w64-mingw32-gcc
+CXX = x86_64-w64-mingw32-g++
 
 # --- Source File Definitions ---
 # Common source files used by both EXE and DLL
-COMMON_SRCS = core.c utils.c process.c errors.c firewall.c
+COMMON_SRCS = src/core.cpp src/utils.cpp src/process.cpp src/errors.cpp src/firewall.cpp
 # Header files that should trigger a rebuild if changed
-HEADERS = core.h utils.h process.h errors.h firewall.h
+HEADERS = include/core.hpp include/utils.hpp include/process.hpp include/errors.hpp include/firewall.hpp
 # Entry-point source for the Executable
-EXE_SRC = main.c
+EXE_SRC = src/main.cpp
 # Entry-point source for the DLL
-DLL_SRC = dllmain.c
+DLL_SRC = src/dllmain.cpp
 
 # --- Target Filename Definitions ---
 TARGET_EXE_RELEASE = EDRSilencer.exe
@@ -20,10 +20,10 @@ TARGET_EXE_STEALTH = EDRSilencer-stealth.exe
 TARGET_DLL_STEALTH = EDRSilencer-stealth.dll
 
 # --- Flag Definitions ---
-# Common flags for C compilation
-CFLAGS = -Wall -Wextra
-CFLAGS_RELEASE = $(CFLAGS) -O2 -D_WIN32_WINNT=0x0601
-CFLAGS_DEBUG = $(CFLAGS) -g -D_WIN32_WINNT=0x0601
+# Common flags for C++ compilation
+CXXFLAGS = -Wall -Wextra -std=c++11 -Iinclude
+CXXFLAGS_RELEASE = $(CXXFLAGS) -O2 -D_WIN32_WINNT=0x0601
+CXXFLAGS_DEBUG = $(CXXFLAGS) -g -D_WIN32_WINNT=0x0601
 # Linker flags for building an EXE
 LDFLAGS_EXE = -lfwpuclnt -lole32 -loleaut32 -luuid -lrpcrt4
 # Linker flags for building a DLL (note the -shared flag)
@@ -70,32 +70,32 @@ stealth-dll: $(TARGET_DLL_STEALTH)
 
 # Rule to build the release EXE
 $(TARGET_EXE_RELEASE): $(COMMON_SRCS) $(EXE_SRC) $(HEADERS)
-	$(CC) $(CFLAGS_RELEASE) $(filter %.c,$^) -o $(TARGET_EXE_RELEASE) $(LDFLAGS_EXE) -s
+	$(CXX) $(CXXFLAGS_RELEASE) $(filter %.cpp,$^) -o $(TARGET_EXE_RELEASE) $(LDFLAGS_EXE) -s
 	@echo "Release EXE build complete: $(TARGET_EXE_RELEASE)"
 
 # Rule to build the debug EXE
 $(TARGET_EXE_DEBUG): $(COMMON_SRCS) $(EXE_SRC) $(HEADERS)
-	$(CC) $(CFLAGS_DEBUG) $(filter %.c,$^) -o $(TARGET_EXE_DEBUG) $(LDFLAGS_EXE)
+	$(CXX) $(CXXFLAGS_DEBUG) $(filter %.cpp,$^) -o $(TARGET_EXE_DEBUG) $(LDFLAGS_EXE)
 	@echo "Debug EXE build complete: $(TARGET_EXE_DEBUG)"
 
 # Rule to build the release DLL
 $(TARGET_DLL_RELEASE): $(COMMON_SRCS) $(DLL_SRC) $(HEADERS)
-	$(CC) $(CFLAGS_RELEASE) $(filter %.c,$^) -o $@ $(LDFLAGS_DLL) -s
+	$(CXX) $(CXXFLAGS_RELEASE) $(filter %.cpp,$^) -o $@ $(LDFLAGS_DLL) -s
 	@echo "Release DLL build complete: $@"
 
 # Rule to build the debug DLL
 $(TARGET_DLL_DEBUG): $(COMMON_SRCS) $(DLL_SRC) $(HEADERS)
-	$(CC) $(CFLAGS_DEBUG) $(filter %.c,$^) -o $@ $(LDFLAGS_DLL)
+	$(CXX) $(CXXFLAGS_DEBUG) $(filter %.cpp,$^) -o $@ $(LDFLAGS_DLL)
 	@echo "Debug DLL build complete: $@"
 
 # Rule to build the stealth EXE
 $(TARGET_EXE_STEALTH): $(COMMON_SRCS) $(EXE_SRC) $(HEADERS)
-	$(CC) $(CFLAGS_RELEASE) $(STEALTH_DEFINES) $(filter %.c,$^) -o $(TARGET_EXE_STEALTH) $(LDFLAGS_EXE) -s
+	$(CXX) $(CXXFLAGS_RELEASE) $(STEALTH_DEFINES) $(filter %.cpp,$^) -o $(TARGET_EXE_STEALTH) $(LDFLAGS_EXE) -s
 	@echo "Stealth EXE build complete: $(TARGET_EXE_STEALTH)"
 
 # Rule to build the stealth DLL
 $(TARGET_DLL_STEALTH): $(COMMON_SRCS) $(DLL_SRC) $(HEADERS)
-	$(CC) $(CFLAGS_RELEASE) $(STEALTH_DEFINES) $(filter %.c,$^) -o $(TARGET_DLL_STEALTH) $(LDFLAGS_DLL) -s
+	$(CXX) $(CXXFLAGS_RELEASE) $(STEALTH_DEFINES) $(filter %.cpp,$^) -o $(TARGET_DLL_STEALTH) $(LDFLAGS_DLL) -s
 	@echo "Stealth DLL build complete: $@"
 
 # --- Cleanup Target ---

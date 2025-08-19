@@ -1,17 +1,48 @@
-# Executables
-EDRSilencer.exe
-EDRSilencer_debug.exe
-EDRSilencer-stealth.exe
+# Prerequisites
+*.d
 
-# Object files
+# Compiled Object files
+*.slo
+*.lo
 *.o
+*.obj
 
-# Other
-*.bak
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
 *.dll
-*.pyc
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# debug information files
+*.dwo
 
 # IDE
 .vscode/
 .idea/
 .DS_Store
+
+EDRSilencer/

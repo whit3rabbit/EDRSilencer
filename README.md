@@ -308,11 +308,11 @@ All target process names are XOR-obfuscated within the binary. You can change th
     *   To change the XOR key, update the `XOR_KEY` variable in **both** `gen_xor.py` and `utils.c`.
 2.  **Generate New C Source File:**
     ```bash
-    python3 gen_xor.py > process.c
+    python3 utils/gen_xor.py > src/process.cpp 
     ```
 3.  **Verify Integrity (Optional but Recommended):**
     ```bash
-    python3 verify_xor.py
+    python3 utils/verify_xor.py src/process.cpp
     ```
 4.  **Recompile the Project:**
     ```bash

@@ -1,9 +1,15 @@
 import re
 import os
+from typing import Optional
+import sys
 
 # --- Configuration ---
 XOR_KEY = 0x42
-SOURCE_FILE = 'process.c'
+# Default locations to try for the generated C++ source
+DEFAULT_SOURCE_CANDIDATES = [
+    'src/process.cpp',          # if running from repo root
+    '../src/process.cpp',       # if running from utils/
+]
 # --- End of Configuration ---
 
 # Simple ANSI color codes for better output
@@ -15,21 +21,33 @@ class Colors:
     CYAN = '\033[96m'
     MAGENTA = '\033[95m'
 
-def verify_full_integrity():
+def resolve_source_file(explicit_path: Optional[str]) -> Optional[str]:
+    """Resolve the source file path. Prefer an explicit CLI path, otherwise try defaults."""
+    if explicit_path:
+        return explicit_path if os.path.exists(explicit_path) else None
+    for candidate in DEFAULT_SOURCE_CANDIDATES:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def verify_full_integrity(source_path: Optional[str] = None):
     """
     Performs a two-pass verification on the source file:
     1. Verifies that each `data_X` byte array correctly decrypts to its comment.
     2. Verifies that the `processData` struct correctly maps each `data_X` to its
        corresponding comment.
     """
-    print(f"{Colors.CYAN}--- Full Integrity Verification for '{SOURCE_FILE}' ---{Colors.RESET}")
-    print(f"Using XOR key: {hex(XOR_KEY)}\n")
-
-    if not os.path.exists(SOURCE_FILE):
-        print(f"{Colors.RED}Error: Source file '{SOURCE_FILE}' not found.{Colors.RESET}")
+    # Resolve the source file path
+    resolved = resolve_source_file(source_path)
+    if not resolved:
+        print(f"{Colors.RED}Error: Could not locate src/process.cpp. Provide a path argument or run from repo root/utils.{Colors.RESET}")
         return
 
-    with open(SOURCE_FILE, 'r', encoding='utf-8') as f:
+    print(f"{Colors.CYAN}--- Full Integrity Verification for '{resolved}' ---{Colors.RESET}")
+    print(f"Using XOR key: {hex(XOR_KEY)}\n")
+
+    with open(resolved, 'r', encoding='utf-8') as f:
         content = f.read()
 
     # --- PASS 1: Verify the `const unsigned char` definitions ---
@@ -79,7 +97,8 @@ def verify_full_integrity():
     )
     
     # Isolate the content within the processData struct
-    struct_content_match = re.search(r"struct EncryptedString processData\[\]\s*=\s*\{(.*?)\};", content, re.DOTALL)
+    # Support either `struct EncryptedString` or `EncryptedString` (C vs C++) and optional namespace wrapping
+    struct_content_match = re.search(r"(?:struct\s+)?EncryptedString\s+processData\[\]\s*=\s*\{(.*?)\};", content, re.DOTALL)
     
     total_struct_entries = 0
     if struct_content_match:
@@ -125,4 +144,6 @@ def verify_full_integrity():
              print(f"{Colors.YELLOW}Warning: One or more sections were not found. Check the script's regex and file path.{Colors.RESET}")
 
 if __name__ == "__main__":
-    verify_full_integrity()
+    # Optional CLI: python verify_xor.py [path/to/src/process.cpp]
+    path_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    verify_full_integrity(path_arg)
